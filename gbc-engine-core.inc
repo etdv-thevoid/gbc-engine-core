@@ -1,35 +1,35 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GB_ENGINE_CORE_VERSION EQUS "0.2.0"
+DEF GBC_ENGINE_CORE_VERSION EQUS "0.2.0"
 
 ; Call with the expected version string to ensure your code
-; is compatible with the INCLUDE'd version of `gb-engine-core.inc`.
+; is compatible with the INCLUDE'd version of `gbc-engine-core.inc`.
 ;
-; Usage: `gb_engine_core_version` `<min_ver>`
+; Usage: `gbc_engine_core_version` `<min_ver>`
 ;
 ; Examples:
-; - `gb_engine_core_version 1.2.3`
-; - `gb_engine_core_version 1.2` (equivalent to 1.2.0)
-; - `gb_engine_core_version 1` (equivalent to 1.0.0)
-MACRO gb_engine_core_version
-   DEF CUR_GB_ENGINE_CORE_VER EQUS STRRPL("{GB_ENGINE_CORE_VERSION}", ".", ",")
-   DEF MIN_GB_ENGINE_CORE_VER EQUS STRRPL("\1", ".", ",")
+; - `gbc_engine_core_version 1.2.3`
+; - `gbc_engine_core_version 1.2` (equivalent to 1.2.0)
+; - `gbc_engine_core_version 1` (equivalent to 1.0.0)
+MACRO gbc_engine_core_version
+   DEF CUR_GBC_ENGINE_CORE_VER EQUS STRRPL("{GBC_ENGINE_CORE_VERSION}", ".", ",")
+   DEF MIN_GBC_ENGINE_CORE_VER EQUS STRRPL("\1", ".", ",")
    
-   check_core_version {CUR_GB_ENGINE_CORE_VER}, {MIN_GB_ENGINE_CORE_VER}, 0, 0, 0
+   check_core_version {CUR_GBC_ENGINE_CORE_VER}, {MIN_GBC_ENGINE_CORE_VER}, 0, 0, 0
 
-   IF !DEF(MIN_GB_ENGINE_CORE_VER)
-      FAIL "gb-engine-core version \1 is required, which is incompatible with current version {GB_ENGINE_CORE_VERSION}"
+   IF !DEF(MIN_GBC_ENGINE_CORE_VER)
+      FAIL "gbc-engine-core version \1 is required, which is incompatible with current version {GBC_ENGINE_CORE_VERSION}"
    ENDC
 
-   PURGE CUR_GB_ENGINE_CORE_VER, MIN_GB_ENGINE_CORE_VER, check_core_version
+   PURGE CUR_GBC_ENGINE_CORE_VER, MIN_GBC_ENGINE_CORE_VER, check_core_version
 ENDM
 
-; Used internally by `gb_engine_core_version` to check whether trios of version components match.
+; Used internally by `gbc_engine_core_version` to check whether trios of version components match.
 ;
 ; Usage:
 ; - `check_core_version` `expected major, minor, patch`, `current major, minor, patch`
 MACRO check_core_version
    IF (\1) != (\4) || (\2) > (\5) || (\3) > (\6)
-      PURGE MIN_GB_ENGINE_CORE_VER
+      PURGE MIN_GBC_ENGINE_CORE_VER
    ENDC
 ENDM
 
@@ -38,7 +38,7 @@ IF (!DEF(__RGBDS_MAJOR__) || !DEF(__RGBDS_MINOR__) || !DEF(__RGBDS_PATCH__)) || 
    (__RGBDS_MAJOR__ == 0 && __RGBDS_MINOR__ <  7) || \
    (__RGBDS_MAJOR__ == 0 && __RGBDS_MINOR__ == 7 && __RGBDS_PATCH__ <  0) || \
    (__RGBDS_MAJOR__ == 0 && __RGBDS_MINOR__ == 7 && __RGBDS_PATCH__ == 0 && DEF(__RGBDS_RC__))
-	FAIL "This version of gb-engine-core.inc requires rgbds v0.7.0 or newer."
+	FAIL "This version of gbc-engine-core.inc requires rgbds v0.7.0 or newer."
 ENDC
 
 ; check to ensure hardware.inc has been included and defined
@@ -62,7 +62,7 @@ DEF HRAM_SIZE        EQU rIE - _HRAM
 DEF hTempStack       EQU rIE - 1
 
 
-SECTION "GB-ENGINE-CORE", ROM0[$0000]
+SECTION "GBC-ENGINE-CORE", ROM0[$0000]
 
 ; RST Vector to perform soft reset
 ; 
@@ -425,13 +425,13 @@ _Reset:
 
 ASSERT BANK(_Main) == 0, """
    Function `_Main` should be in ROM0!
-   gb-engine-core hands off code execution to a function labeled `_Main` when done with initial setup.
+   gbc-engine-core hands off code execution to a function labeled `_Main` when done with initial setup.
    """
    call _Main              ; Real program starts here
 
 ASSERT BANK(_CrashHandler) == 0, """
    Function `_CrashHandler` should be in ROM0!
-   gb-engine-core hands off code execution to a function labeled `_CrashHandler` whenever `rst _Crash` is executed.
+   gbc-engine-core hands off code execution to a function labeled `_CrashHandler` whenever `rst _Crash` is executed.
    """
    jp _CrashHandler        ; Should never reach this point!
 
@@ -1335,7 +1335,7 @@ _RefreshOAM::
 
 ; OAM Refresh function for DMA transfer
 _OAMRefreshFunction:
-LOAD "GB-ENGINE-CORE - OAM REFRESH", HRAM, ALIGN[4]
+LOAD "GBC-ENGINE-CORE - OAM REFRESH", HRAM, ALIGN[4]
 
 ; Copy of OAM Refresh function for DMA transfer in HRAM
 hOAMRefreshFunction:
@@ -1353,7 +1353,7 @@ ENDL
 ENDSECTION
 
 
-SECTION FRAGMENT "GB-ENGINE-CORE - VRAM", VRAM[_VRAM]
+SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_VRAM]
 
 UNION
 
@@ -1406,7 +1406,7 @@ ASSERT @ == _SCRN0
 ENDSECTION
 
 
-SECTION FRAGMENT "GB-ENGINE-CORE - VRAM", VRAM[_SCRN0]
+SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_SCRN0]
 
 ; VRAM Screen 0 Tilemap
 ;
@@ -1427,7 +1427,7 @@ ASSERT @ == _SCRN1
 ENDSECTION
 
 
-SECTION FRAGMENT "GB-ENGINE-CORE - VRAM", VRAM[_SCRN1]
+SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_SCRN1]
 
 ; VRAM Screen 1 Tilemap
 ;
@@ -1448,7 +1448,7 @@ ASSERT @ == _SRAM
 ENDSECTION
 
 
-SECTION "GB-ENGINE-CORE - SRAM", SRAM[_SRAM]
+SECTION "GBC-ENGINE-CORE - SRAM", SRAM[_SRAM]
 
 ; 256 byte buffer at the start of SRAM
 sBuffer:
@@ -1479,7 +1479,7 @@ sDataStart:
 ENDSECTION
 
 
-SECTION FRAGMENT "GB-ENGINE-CORE - WRAM", WRAM0[_RAM]
+SECTION FRAGMENT "GBC-ENGINE-CORE - WRAM", WRAM0[_RAM]
 
 wStack:     DS RAM_STACK_SIZE
 wStackTop:
@@ -1487,7 +1487,7 @@ wStackTop:
 ENDSECTION
 
 
-SECTION FRAGMENT "GB-ENGINE-CORE - WRAM", WRAM0, ALIGN[8]
+SECTION FRAGMENT "GBC-ENGINE-CORE - WRAM", WRAM0, ALIGN[8]
 
 ; DMA will be used to copy this to OAM
 ;
@@ -1510,7 +1510,7 @@ ENDR
 ENDSECTION
 
 
-SECTION "GB-ENGINE-CORE - OAM", OAM[_OAMRAM]
+SECTION "GBC-ENGINE-CORE - OAM", OAM[_OAMRAM]
 
 ; WARNING:
 ;
@@ -1536,7 +1536,7 @@ ENDR
 ENDSECTION
 
 
-SECTION "GB-ENGINE-CORE - HRAM", HRAM[_HRAM]
+SECTION "GBC-ENGINE-CORE - HRAM", HRAM[_HRAM]
 
 hIsGBColorFlag::     DS 1
 hIsGBAdvanceFlag::   DS 1
