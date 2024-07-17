@@ -1,3 +1,3 @@
-# Game Boy Engine Core
+# Game Boy (Color) Engine - Core
 
-A quick and dirty Game Boy (Color) engine for homebrew games
+A quick and dirty Game Boy (Color) engine core for homebrew games
