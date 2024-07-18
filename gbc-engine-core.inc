@@ -1,5 +1,5 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION EQUS "0.2.0"
+DEF GBC_ENGINE_CORE_VERSION EQUS "0.2.1"
 
 ; Call with the expected version string to ensure your code
 ; is compatible with the INCLUDE'd version of `gbc-engine-core.inc`.
