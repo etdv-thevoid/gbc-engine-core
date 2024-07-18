@@ -364,21 +364,21 @@ DS $0150 - @, $00
 
 _Start:
    cp a, BOOTUP_A_CGB      ; Check Hardware model (GBC)
+   ld a, FALSE
    jr nz, .notGBC
    ld a, TRUE
    ldh [hIsGBColorFlag], a
 
    ld a, b
    cp a, BOOTUP_B_AGB      ; Check Hardware model (GBA)
+   ld a, FALSE
    jr nz, .notGBA
    ld a, TRUE
-   ldh [hIsGBAdvanceFlag], a
+   ; fallthrough
 
 .notGBC:
-   xor a
    ldh [hIsGBColorFlag], a
 .notGBA:
-   xor a
    ldh [hIsGBAdvanceFlag], a
    ; fallthrough
 
@@ -403,22 +403,22 @@ _Reset:
 
    call _SetRandomSeed     ; Use value to set Random seed
 
-   ld hl, _RAM             ; Clear RAM
+   ld hl, _RAM
    ld bc, RAM_SIZE
    ld d, $00
-   call _MemSet
+   call _MemSet            ; Clear RAM
 
    ld sp, wStackTop        ; With RAM cleared, switch to real stack
 
-   ld hl, _VRAM            ; Clear VRAM
+   ld hl, _VRAM
    ld bc, VRAM_SIZE
    ld d, $00
-   call _MemSet
+   call _MemSet            ; Clear VRAM
 
-   ld hl, _HRAM + 2        ; Clear HRAM (but not hardware model variables)
-   ld b, HRAM_SIZE - 2
+   ld hl, _HRAM + (hRandomState.end - _HRAM)
+   ld b, HRAM_SIZE - (hRandomState.end - _HRAM)
    ld a, $00
-   call _MemSetFast
+   call _MemSetFast        ; Clear HRAM (but not the variables we've already set)
 
    call _InitOAM           ; With HRAM filled with $00, copy OAM Refresh function to HRAM
    call _RefreshOAM        ; With RAM filled with $00, this will clear also clear OAM
@@ -435,11 +435,30 @@ ASSERT BANK(_CrashHandler) == 0, """
    """
    jp _CrashHandler        ; Should never reach this point!
 
-; Set GBC/GBA CPU Speed to DoubleSpeed
-_SetCPUFast::
+; Checks if running on GBC hardware
+;
+; Returns:
+; - z / nc = TRUE
+; - nz / c = FALSE
+_IsGBColor::
    ldh a, [hIsGBColorFlag]
    cp a, TRUE
-   ret c
+   ret
+
+; Checks if running on GBA hardware
+;
+; Returns:
+; - z / nc = TRUE
+; - nz / c = FALSE
+_IsGBAdvance::
+   ldh a, [hIsGBAdvanceFlag]
+   cp a, TRUE
+   ret
+
+; Set GBC/GBA CPU Speed to DoubleSpeed
+_SetCPUFast::
+   call _IsGBColor
+   ret nz
    ldh a, [rKEY1]
    and a, KEY1F_DBLSPEED
    jr nz, _SwitchCPUSpeed
@@ -447,9 +466,8 @@ _SetCPUFast::
 
 ; Set GBA/GBC CPU to SingleSpeed
 _SetCPUSlow::
-   ldh a, [hIsGBColorFlag]
-   cp a, TRUE
-   ret c
+   call _IsGBColor
+   ret nz
    ldh a, [rKEY1]
    and a, KEY1F_DBLSPEED
    jr z, _SwitchCPUSpeed
@@ -1538,18 +1556,20 @@ ENDSECTION
 
 SECTION "GBC-ENGINE-CORE - HRAM", HRAM[_HRAM]
 
-hIsGBColorFlag::     DS 1
-hIsGBAdvanceFlag::   DS 1
+hIsGBColorFlag:   DS 1
+hIsGBAdvanceFlag: DS 1
 
+hRandomState:
+   DS 4
+.end:
 
-hIsVBlankFlag: DS 1
+hIsVBlankFlag:    DS 1
 
-hVBLHandler:   DS 2
-hLCDHandler:   DS 2
-hTIMHandler:   DS 2
-hSIOHandler:   DS 2
-hJOYHandler:   DS 2
-
+hVBLHandler:      DS 2
+hLCDHandler:      DS 2
+hTIMHandler:      DS 2
+hSIOHandler:      DS 2
+hJOYHandler:      DS 2
 
 hCanResetFlag::   DS 1
 
@@ -1557,10 +1577,7 @@ hKeysHeld::       DS 1
 hKeysPressed::    DS 1
 hKeysReleased::   DS 1
 
-
 hFarCallBank:     DS 1
-
-hRandomState:     DS 4
 
 ENDSECTION
 
