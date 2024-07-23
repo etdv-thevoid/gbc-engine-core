@@ -1,5 +1,29 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION EQUS "0.2.1"
+DEF GBC_ENGINE_CORE_VERSION    EQUS "0.4.0"
+
+; REQUIRED RGBDS VERSION
+DEF REQUIRED_RGBDS_VERSION     EQUS "0.7.0"
+
+; REQUIRE HARDWARE.INC VERSION
+DEF REQUIRED_HARDWARE_VERSION  EQUS "4.9.1"
+
+
+;###############################################################################
+;
+;     PUSH LINKER STACKS
+;
+;###############################################################################
+
+PUSHC ; charmap
+PUSHS ; section
+PUSHO ; options
+
+
+;###############################################################################
+;
+;     MACROS
+;
+;###############################################################################
 
 ; Call with the expected version string to ensure your code
 ; is compatible with the INCLUDE'd version of `gbc-engine-core.inc`.
@@ -11,41 +35,104 @@ DEF GBC_ENGINE_CORE_VERSION EQUS "0.2.1"
 ; - `gbc_engine_core_version 1.2` (equivalent to 1.2.0)
 ; - `gbc_engine_core_version 1` (equivalent to 1.0.0)
 MACRO gbc_engine_core_version
-   DEF CUR_GBC_ENGINE_CORE_VER EQUS STRRPL("{GBC_ENGINE_CORE_VERSION}", ".", ",")
-   DEF MIN_GBC_ENGINE_CORE_VER EQUS STRRPL("\1", ".", ",")
-   
-   check_core_version {CUR_GBC_ENGINE_CORE_VER}, {MIN_GBC_ENGINE_CORE_VER}, 0, 0, 0
+   REDEF CURRENT_VERSION EQUS STRRPL("{GBC_ENGINE_CORE_VERSION}", ".", ",")
+   REDEF EXPECTED_VERSION EQUS STRRPL("\1", ".", ",")
 
-   IF !DEF(MIN_GBC_ENGINE_CORE_VER)
-      FAIL "gbc-engine-core version \1 is required, which is incompatible with current version {GBC_ENGINE_CORE_VERSION}"
-   ENDC
+   REDEF INTERNAL_CORE_CHECK EQUS """MACRO internal_core_check
+   IF (\\1 != \\4) || (\\1 == \\4 && \\2 < \\5) || (\\1 == \\4 && \\2 == \\5 && \\3 < \\6)
+      FAIL "gbc-engine-core.inc version \\4.\\5.\\6 is required, which is incompatible with current version \\1.\\2.\\3"
+   ENDC\nENDM"""
 
-   PURGE CUR_GBC_ENGINE_CORE_VER, MIN_GBC_ENGINE_CORE_VER, check_core_version
+   INTERNAL_CORE_CHECK
+
+   internal_core_check {CURRENT_VERSION}, {EXPECTED_VERSION}, 0, 0, 0
+
+   PURGE CURRENT_VERSION
+   PURGE EXPECTED_VERSION
+   PURGE INTERNAL_CORE_CHECK
+   PURGE internal_core_check
 ENDM
 
-; Used internally by `gbc_engine_core_version` to check whether trios of version components match.
+; Call with the expected version string to ensure your code
+; is compatible with current version of RGBDS binaries.
 ;
-; Usage:
-; - `check_core_version` `expected major, minor, patch`, `current major, minor, patch`
-MACRO check_core_version
-   IF (\1) != (\4) || (\2) > (\5) || (\3) > (\6)
-      PURGE MIN_GBC_ENGINE_CORE_VER
+; Usage: `check_rgbds_version` `<min_ver>`
+;
+; Examples:
+; - `check_rgbds_version 1.2.3`
+; - `check_rgbds_version 1.2` (equivalent to 1.2.0)
+; - `check_rgbds_version 1` (equivalent to 1.0.0)
+MACRO check_rgbds_version
+   IF (!DEF(__RGBDS_MAJOR__) || !DEF(__RGBDS_MINOR__) || !DEF(__RGBDS_PATCH__) || DEF(__RGBDS_RC__))
+      FAIL "RGBDS version \1 is required, which is incompatible with current version"
    ENDC
+
+   REDEF RGBDS_VERSION EQUS STRCAT("{d:__RGBDS_MAJOR__}", ".", "{d:__RGBDS_MINOR__}", ".","{d:__RGBDS_PATCH__}")
+
+   REDEF CURRENT_VERSION EQUS STRRPL("{RGBDS_VERSION}", ".", ",")
+   REDEF EXPECTED_VERSION EQUS STRRPL("\1", ".", ",")
+
+   REDEF INTERNAL_RGBDS_CHECK EQUS """MACRO internal_rgbds_check
+   IF (\\1 != \\4) || (\\1 == \\4 && \\2 < \\5) || (\\1 == \\4 && \\2 == \\5 && \\3 < \\6)
+      FAIL "RGBDS version \\4.\\5.\\6 is required, which is incompatible with current version \\1.\\2.\\3"
+   ENDC\nENDM"""
+
+   INTERNAL_RGBDS_CHECK
+
+   internal_rgbds_check {CURRENT_VERSION}, {EXPECTED_VERSION}, 0, 0, 0
+
+   PURGE RGBDS_VERSION
+   PURGE CURRENT_VERSION
+   PURGE EXPECTED_VERSION
+   PURGE INTERNAL_RGBDS_CHECK
+   PURGE internal_rgbds_check
 ENDM
 
-IF (!DEF(__RGBDS_MAJOR__) || !DEF(__RGBDS_MINOR__) || !DEF(__RGBDS_PATCH__)) || \
-   (__RGBDS_MAJOR__ <  0) || \
-   (__RGBDS_MAJOR__ == 0 && __RGBDS_MINOR__ <  7) || \
-   (__RGBDS_MAJOR__ == 0 && __RGBDS_MINOR__ == 7 && __RGBDS_PATCH__ <  0) || \
-   (__RGBDS_MAJOR__ == 0 && __RGBDS_MINOR__ == 7 && __RGBDS_PATCH__ == 0 && DEF(__RGBDS_RC__))
-	FAIL "This version of gbc-engine-core.inc requires rgbds v0.7.0 or newer."
-ENDC
+; Creates the ASCII charactermap used internally for the crash screen.
+MACRO create_gb_engine_core_charmap
+   REDEF CHARMAP_START EQU 32  ; ASCII code for (space)
+   REDEF CHAR_LIST EQUS STRCAT(#""" !"#$%&'()*+,-./""", \
+						             #"""0123456789:;<=>?""", \
+						             #"""@ABCDEFGHIJKLMNO""", \
+						             #"""PQRSTUVWXYZ[\]^_""", \
+						             #"""`abcdefghijklmno""", \
+						             #"""pqrstuvwxyz{|}~©""")
 
-; check to ensure hardware.inc has been included and defined
-   rev_Check_hardware_inc 4.9.1
+   NEWCHARMAP gb_engine_core_charmap ; Create default ASCII charmap
+
+   FOR CHAR, STRLEN("{CHAR_LIST}")
+	   CHARMAP STRSUB("{CHAR_LIST}", CHAR + 1, 1), CHAR + CHARMAP_START
+   ENDR
+
+   PURGE CHARMAP_START
+   PURGE CHAR_LIST
+ENDM
+
+
+;###############################################################################
+;
+;     CONSTANTS
+;
+;###############################################################################
 
 DEF TRUE    EQU 1
 DEF FALSE   EQU 0
+
+RSRESET
+DEF CRASH_EXECUTING_FF     RB 1
+DEF CRASH_NULL_POINTER     RB 1
+DEF CRASH_EXECUTING_RAM    RB 1
+DEF CRASH_RETURN_FROM_MAIN RB 1
+DEF CRASH_STACK_OVERFLOW   RB 1
+DEF CRASH_STACK_UNDERFLOW  RB 1
+DEF CRASH_DIVIDE_BY_ZERO   RB 1
+
+DEF NUMBER_OF_CRASH_CODES  RB 0
+
+DEF CRASH_UNKNOWN_ERROR    RB 1
+
+DEF CRASH_CODE_SIZE  EQU 4
+DEF CRASH_TEXT_SIZE  EQU 16
 
 DEF VRAM_SIZE        EQU _SRAM - _VRAM
 DEF TILE_BLOCK_SIZE  EQU (VRAM_SIZE - (_SRAM - _SCRN0)) / 3
@@ -56,13 +143,42 @@ DEF SRAM_SIZE        EQU _RAM - _SRAM
 DEF SRAM_BUFFER_SIZE EQU $100
 
 DEF RAM_SIZE         EQU (_RAMBANK - _RAM) * 2
-DEF RAM_STACK_SIZE   EQU $200
+DEF STACK_SIZE       EQU $100
+DEF STACK_BUFFER     EQU $10
 
 DEF HRAM_SIZE        EQU rIE - _HRAM
 DEF hTempStack       EQU rIE - 1
 
 
-SECTION "GBC-ENGINE-CORE", ROM0[$0000]
+;###############################################################################
+;
+;     VERSION CHECKS
+;
+;###############################################################################
+
+; check to ensure hardware.inc has been included and meets minimum version
+   rev_Check_hardware_inc {REQUIRED_HARDWARE_VERSION}
+
+; check to ensure RGBDS binaries meet minimum version
+   check_rgbds_version {REQUIRED_RGBDS_VERSION}
+
+
+;###############################################################################
+;
+;     ASCII CHARMAP
+;
+;###############################################################################
+
+   create_gb_engine_core_charmap
+
+
+;###############################################################################
+;
+;     RST VECTORS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0[$0000]
 
 ; RST Vector to perform soft reset
 ; 
@@ -74,6 +190,7 @@ SECTION "GBC-ENGINE-CORE", ROM0[$0000]
 _NULL::
 	nop
 	nop
+   ld a, CRASH_NULL_POINTER
 	jp _CrashHandler
 
 DS $0008 - @, $FF
@@ -81,9 +198,12 @@ DS $0008 - @, $FF
 ; RST Vector for `jp hl` with additional error handling
 ;
 ; Crashes if attempting to jump to RAM
-; Used by `_FarCall`, and `_FarCallPreserve`
+;
+; By default, called by the 
+; the interrupt handler executor, `_FarCall`, and `_FarCallPreserve`
 _CallHL::
    bit 7, h
+   ld a, CRASH_EXECUTING_RAM
    jp nz, _CrashHandler
    jp hl
 
@@ -139,22 +259,39 @@ _SetJOYHandler::
 
 DS $0038 - @, $FF
 
-; RST Vector to perform a soft reset
+; RST Vector to perform a crash
 ;
 ; This traps arbitrary code executions of the byte $FF,
 ; which is the recommended "default" padding value for empty ROM space.
 ; The opcode for rst $38 is $FF, so any attempts to execute code in
 ; such empty space will instead end up here.
+;
+; It can also be called directly to force any crash code by setting
+; `hCrashCode` before calling `rst _Crash`.
+;
+; Inputs:
+; - `hCrashCode`
 _Crash::
-   nop
-   nop
+   ldh a, [hCrashCode]
    jp _CrashHandler
 
 DS $0040 - @, $FF
 
+ENDSECTION
+
+
+;###############################################################################
+;
+;     INT VECTORS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0[$0040]
+
 _VBL:
    push hl
-   push af
+   push de
+   push bc
    ld hl, hVBLHandler
    jr _InterruptVBL
 
@@ -162,7 +299,8 @@ DS $0048 - @, $FF
 
 _LCD:
    push hl
-   push af
+   push de
+   push bc
    ld hl, hLCDHandler
    jr _InterruptCommon
 
@@ -170,7 +308,8 @@ DS $0050 - @, $FF
 
 _TIM:
    push hl
-   push af
+   push de
+   push bc
    ld hl, hTIMHandler
    jr _InterruptCommon
 
@@ -178,7 +317,8 @@ DS $0058 - @, $FF
 
 _SIO:
    push hl
-   push af
+   push de
+   push bc
    ld hl, hSIOHandler
    jr _InterruptCommon
 
@@ -186,18 +326,23 @@ DS $0060 - @, $FF
 
 _JOY:
    push hl
-   push af
+   push de
+   push bc
    ld hl, hJOYHandler
    jr _InterruptCommon
 
 DS $0068 - @, $FF
 
-; Default Interrupt Handler Function
+ENDSECTION
+
+
+;###############################################################################
 ;
-; Initialize Interrupt Handler HRAM variables to this in _Start,
-; and any other time in which you don't want an interrupt to do anything.
-_DefaultInterruptHandler::
-   ret
+;     INTERRUPT SETTER & EXECUTOR
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0[$0068]
 
 ; Sets Interrupt Handler
 ;
@@ -211,48 +356,80 @@ _SetInterruptHandler:
    ret
 
 ; Set hIsVBlankFlag and execute Interrupt Handler
-; Called from VBL Interrupt $0040
-;
-; Inputs:
-;- hl = interrupt handler HRAM variable
 _InterruptVBL:
+   push af
    ld a, TRUE
    ldh [hIsVBlankFlag], a
+   jr _RunInterruptHandler
+
+; Shared Interrupt jump point
+_InterruptCommon:
+   push af
    ; fallthrough
 
 ; Execute Interrupt Handler
 ;
 ; Inputs:
 ; - hl = interrupt handler HRAM variable
-_InterruptCommon:
+_RunInterruptHandler:
+   call _CheckForStackOverflow
+
    ld a, [hl+]
    ld h, [hl]
    ld l, a
-
-   push bc
-   push de
    rst _CallHL
-   pop  de
-   pop  bc
+
+   call _CheckForStackUnderflow
 
    pop af
+   pop bc
+   pop de
    pop hl
+
    reti
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     WAIT FUNCTIONS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Turn LCD on, with parameters
+;
+; Inputs:
+; - a = `rLCDC` parameters
+_ScreenOn::
+   or a, LCDCF_ON
+   ldh [rLCDC], a
+   ret
 
 ; Safely turns LCD off by waiting for VBlank
 _ScreenOff::
    ldh a, [rLCDC]
    and a, LCDCF_ON
-   ret z ; LCD already OFF
+   ret z                      ; LCD already OFF
+
    ld b, SCRN_Y
-   call _WaitForLY
+   call _WaitForScanlineHigh  ; Wait for LY 144 (VBlank start)
+
    xor a, a
-   ldh [rLCDC], a ; Shutdown LCD
+   ldh [rLCDC], a             ; Shutdown LCD
+   
    ret
 
-; Wait for LY (Scanline)
+; Wait for b >= LY (Scanline)
+;
+; Inputs:
 ; - b = LY to wait for
-_WaitForLY::
+;
+; Trashes:
+; - c
+_WaitForScanlineHigh::
    ld c, LOW(rLY)
 .wait:
    ld a, [c]
@@ -260,12 +437,26 @@ _WaitForLY::
    jr c, .wait
    ret
 
-; Wait for HBlank and/or VBlank mode
-; (only modes where VRAM access is safe)
+; Wait for b < LY (Scanline)
+;
+; Inputs:
+; - b = LY to wait for
+;
+; Trashes:
+; - c
+_WaitForScanlineLow::
+   ld c, LOW(rLY)
+.wait:
+   ld a, [c]
+   cp a, b
+   jr nc, .wait
+   ret
+
+; Wait for safe VRAM access (HBlank and/or VBlank mode)
 _WaitForScreenBlank::
    ldh a, [rSTAT]
    bit STATB_BUSY, a
-   jr nz, _WaitForScreenBlank ; Not mode 0 or 1
+   jr nz, _WaitForScreenBlank
    ret
 
 ; Wait for next VBlank Interrupt
@@ -280,65 +471,70 @@ _WaitForVBLInterrupt::
    jr z, .wait
    ret
 
-; Wait for (e) VBlank Interrupts
-; - e = frames to wait
-_WaitFrames::
-   call _WaitForVBLInterrupt
-   dec e
-   jr nz, _WaitFrames
-   ret
+ENDSECTION
+
+
+;###############################################################################
+;
+;     SCAN KEYS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Polls joypad register and sets appropriate HRAM variables
 ;
 ; Returns:
-; - a = hKeysHeld
+; - `hKeysHeld`
+; - `hKeysPressed`
+; - `hKeysReleased`
 ;
 ; Trashes:
+; - af
 ; - bc
 _ScanKeys::
-   ld c, LOW(rP1)          ; c = joypad register low byte
-   ld a, P1F_GET_DPAD      ; get DPAD
-   ld [c], a
-REPT 6
-   ld a, [c]               ; poll for a few cycles
-ENDR
-   or a, %11110000         ; set upper 4 bits
-   swap a                  ; swap DPAD bits to upper nibble
+   ld a, P1F_GET_DPAD
+   call .getNibble         ; get DPAD nibble
+   swap a                  ; swap bits to upper nibble
    ld b, a                 ; b = current state (DPAD)
 
-   ld a, P1F_GET_BTN       ; get BTN
-   ld [c], a
-REPT 6
-   ld a, [c]               ; poll for a few cycles
-ENDR
-   or a, %11110000         ; set upper 4 bits
+   ld a, P1F_GET_BTN
+   call .getNibble         ; get BTN nibble
    xor a, b                ; Mix with DPAD bits, and invert all bits (such that pressed=1)
    ld b, a                 ; b = current state (DPAD + BTN)
 
    ld a, P1F_GET_NONE      ; reset joypad register
-   ld [c], a
+   ldh [rP1], a
 
    ld a, b                 ; check if reset key combo is pressed
    and a, PADF_START | PADF_SELECT | PADF_B | PADF_A
    jr nz, .tryReset
 
-.noReset:
+.noReset:                  ; b = new state
    ldh a, [hKeysHeld]
    ld c, a                 ; c = old state
 
-   ld a, b                 ; a = current state
-   cpl                     ; a = not a
-   and a, c                ; released = (NOT current) AND old
-   ldh [hKeysReleased], a  
+   cpl
+   and a, b
+   ldh [hKeysPressed], a   ; pressed = (NOT old) AND new
 
-   ld a, c                 ; a = old state
-   cpl                     ; a = not a
-   and a, b                ; pressed = (NOT old) AND current
-   ldh [hKeysPressed], a
+   ld a, b
+   ldh [hKeysHeld], a      ; held = new
 
-   ld a, b                 ; a = current state
-   ldh [hKeysHeld], a
+   cpl
+   and a, c
+   ldh [hKeysReleased], a  ; released = (NOT current) AND old
 
+   ret
+
+.getNibble:
+   ldh [rP1], a
+   call .burn              ; burn 10 cycles by calling known return
+REPT 3
+   ldh a, [rP1]            ; poll 3 times (9 cycles) to account for key bounce
+ENDR
+   or a, %11110000         ; set upper 4 bits
+.burn:
    ret
 
 .tryReset:
@@ -347,8 +543,60 @@ ENDR
    jr z, .noReset          ; else skip
    jp _Reset
 
-_____:
-DS $0100 - @, $FF
+ENDSECTION
+
+
+;###############################################################################
+;
+;     HARDWARE CHECKS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Checks if running on GBC hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBColor::
+   ldh a, [hIsGBColorFlag]
+   and a
+   ret
+
+; Checks if running on GBA hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBAdvance::
+   ldh a, [hIsGBAdvanceFlag]
+   and a
+   ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     EMPTY SPACE
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+:  DS $0100 - @, $FF
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     CARTRIDGE HEADER
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0[$0100]
 
 _Header:
    nop
@@ -356,11 +604,262 @@ _Header:
 
    NINTENDO_LOGO
 
-_MagicString:
-   DS 16, $00
+_MagicStringTitle:
+   DS 11, $00
 .end:
 
+_MagicStringCode:
+   DS 4, $00
+.end:
+
+DS $014C - @, $00
+
+_MagicStringVersion:
+   DS 1, $00
+.end
+
 DS $0150 - @, $00
+
+   DB "BUILD DATE "
+_BuildDate::
+   DB __ISO_8601_UTC__
+.end::
+
+DS $0170 - @, $00
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     STACK POINTER CHECKS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Verifies that `sp` is within the bounds of the stack and
+; causes a crash on stack detection of overflow.
+;
+; By default, called by 
+; the interrupt handler executor, `_FarCall`, and `_FarCallPreserve` 
+;
+; Trashes:
+; - af
+_CheckForStackOverflow::
+   push hl
+
+   ld hl, sp - STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
+	ld a, h
+	cp a, HIGH(wStackBottom)
+	ld a, CRASH_STACK_OVERFLOW
+	jp c, _CrashHandler
+
+   pop hl
+   ret
+
+; Verifies that `sp` is within the bounds of the stack and
+; causes a crash on stack detection of underflow.
+;
+; By default, called by 
+; the interrupt handler executor, `_FarCall`, and `_FarCallPreserve` 
+;
+; Trashes:
+; - af
+_CheckForStackUnderflow::
+IF (STACK_SIZE % $100 == 0)
+   push hl
+
+   ld hl, sp + STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
+	ld a, h
+   cp a, HIGH(wStackTop) + 1
+	ld a, CRASH_STACK_UNDERFLOW
+	jp nc, _CrashHandler
+
+   pop hl
+ELSE
+   WARN "STACK_SIZE must be a multiple of $100 bytes for effecient stack underflow checking"
+ENDC
+   ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     CPU SPEED SWITCHES
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Set GBC/GBA CPU Speed to DoubleSpeed
+_SetCPUFast::
+   call _IsGBColor
+   ret z
+   ldh a, [rKEY1]
+   and a, KEY1F_DBLSPEED
+   jr nz, _SwitchCPUSpeed
+   ret
+
+; Set GBA/GBC CPU to SingleSpeed
+_SetCPUSlow::
+   call _IsGBColor
+   ret z
+   ldh a, [rKEY1]
+   and a, KEY1F_DBLSPEED
+   jr z, _SwitchCPUSpeed
+   ret
+
+; Switches CPU Speed
+_SwitchCPUSpeed:
+   ldh a, [rIE]
+   ld b, a ; save IE
+   xor a, a
+   ldh [rIE], a
+   ld  a, P1F_GET_NONE
+   ldh [rP1], a
+   ld  a, KEY1F_PREPARE
+   ldh [rKEY1],a
+
+   stop
+
+   ld a, b
+   ldh [rIE], a ; restore IE
+   ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     FARCALLS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Calls function `hl` in bank `a` by switching rom banks
+; - a = bank where function is located
+; - hl = function
+;
+; Arugments can be passed via `bc` and `de`
+; - bc = args
+; - de = args
+_FarCall::
+   ldh [hFarCallBank], a   ; Save destination bank
+
+   ldh a, [hCurrentBank]   ; Get current bank
+   push af                 ; Push current bank to stack
+
+   ldh a, [hFarCallBank]   ; Set destination bank
+   ldh [hCurrentBank], a
+   ld [rROMB0], a
+
+   call _CheckForStackOverflow
+
+   rst _CallHL             ; Call function at `hl` in destination bank
+
+   call _CheckForStackOverflow
+
+   pop af                  ; Pop current bank from stack and reset
+   ldh [hCurrentBank], a
+   ld [rROMB0], a
+
+   ret
+
+; Calls function `hl` in bank `a` by switching rom banks.
+; - a = bank where function is located
+; - hl = function
+;
+; Preserves registers `bc` and `de`
+_FarCallPreserve::
+   push de
+   push bc
+   call _FarCall
+   pop bc
+   pop de
+   ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     CHECKSUM
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Calculates a 2 byte checksum
+;
+; Inputs:
+; - hl = start address
+; - bc = byte count
+;
+; Returns:
+; - de = checksum value
+;
+; Checksum is calculated as follows (BSD checksum):
+;
+; ```
+; u16 sum = 0
+; u8 * data = &start;
+; for i = 0 to size
+;    sum = (sum >> 1) | (sum << 15)
+;    sum += data[i]
+; ```
+_CalculateChecksum::
+   ld de, $0000 ; Checksum accumulator
+
+.loop:
+   ld a, e     ; save lowest bit of de
+   srl d
+   rr e        ; de = (u16)de >> 1
+   rrca        ; a.7 = a.0
+   and a, %10000000
+   or a, d
+   ld d, a     ; de = ( (u16)de >> 1 ) | (e.0 << 15)
+
+   ld a, [hl+] ; a = read byte
+
+   add a, e
+   ld e, a
+   ld a, d
+   adc a, 0
+   ld d, a     ; de += (u16)a
+
+   dec bc
+   ld a, b
+   or a, c
+   jr nz, .loop
+
+   ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     EMPTY SPACE
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+:  DS $0200 - @, $FF
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     START, RESET, & CRASH HANDLER
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 _Start:
    cp a, BOOTUP_A_CGB      ; Check Hardware model (GBC)
@@ -410,11 +909,25 @@ _Reset:
 
    ld sp, wStackTop        ; With RAM cleared, switch to real stack
 
+   xor a
    ld hl, _VRAM
    ld bc, VRAM_SIZE
    ld d, $00
-   call _MemSet            ; Clear VRAM
+   call _VideoMemSet       ; Clear VRAM bank 0
 
+   call _IsGBColor
+   jr z, .notGBC
+
+   ld a, 1
+   ld hl, _VRAM
+   ld bc, VRAM_SIZE
+   ld d, $00
+   call _VideoMemSet       ; Clear VRAM bank 1
+
+   call _SetBackgroundPaletteBlack
+   call _SetSpritePaletteBlack
+
+.notGBC:
    ld hl, _HRAM + (hRandomState.end - _HRAM)
    ld b, HRAM_SIZE - (hRandomState.end - _HRAM)
    ld a, $00
@@ -423,113 +936,231 @@ _Reset:
    call _InitOAM           ; With HRAM filled with $00, copy OAM Refresh function to HRAM
    call _RefreshOAM        ; With RAM filled with $00, this will clear also clear OAM
 
-ASSERT BANK(_Main) == 0, """
-   Function `_Main` should be in ROM0!
-   gbc-engine-core hands off code execution to a function labeled `_Main` when done with initial setup.
-   """
+ASSERT BANK(_Main) == 0, #"""
+Function `_Main` should be in ROM0!
+gbc-engine-core hands off code execution to a function labeled `_Main` when done with initial setup.
+
+The function can assume the following:
+ - All ram areas are cleared
+ - LCD is off
+ - Interrupts are disabled
+"""
    call _Main              ; Real program starts here
 
-ASSERT BANK(_CrashHandler) == 0, """
-   Function `_CrashHandler` should be in ROM0!
-   gbc-engine-core hands off code execution to a function labeled `_CrashHandler` whenever `rst _Crash` is executed.
-   """
-   jp _CrashHandler        ; Should never reach this point!
+   ld a, CRASH_RETURN_FROM_MAIN
+   ; Should never reach this point!
+   ; fallthrough to CrashHandler
 
-; Checks if running on GBC hardware
-;
-; Returns:
-; - z / nc = TRUE
-; - nz / c = FALSE
-_IsGBColor::
-   ldh a, [hIsGBColorFlag]
-   cp a, TRUE
-   ret
+_CrashHandler:
+   di
 
-; Checks if running on GBA hardware
-;
-; Returns:
-; - z / nc = TRUE
-; - nz / c = FALSE
-_IsGBAdvance::
-   ldh a, [hIsGBAdvanceFlag]
-   cp a, TRUE
-   ret
+   cp a, NUMBER_OF_CRASH_CODES
+   jr c, .validCrashCode
+   ld a, CRASH_UNKNOWN_ERROR
 
-; Set GBC/GBA CPU Speed to DoubleSpeed
-_SetCPUFast::
+.validCrashCode:
+   ldh [hCrashCode], a     ; Save crash code
+
+   call _ScreenOff         ; Turn off screen
+
+   xor a
+   ld hl, _VRAM
+   ld bc, VRAM_SIZE
+   ld d, $00
+   call _VideoMemSet       ; Clear VRAM bank 0
+
+ASSERT BANK(_FontTiles) == 0, #"""
+Tileset `_FontTiles` should be in ROM0!
+gbc-engine-core requires a .1bpp set of font tiles in ASCII format for the crash screen.
+
+Format:
+
+ !"#$%&'()*+,-./
+0123456789:;<=>?
+@ABCDEFGHIJKLMNO
+PQRSTUVWXYZ[\]^_
+`abcdefghijklmno
+pqrstuvwxyz{|}~
+"""
+ASSERT ((_FontTiles.end - _FontTiles) * 2) == (vBLK01.128 - vBLK01.32), #"""
+gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to be formated as .1bpp
+"""
+   xor a
+   ld hl, _FontTiles
+   ld bc, (_FontTiles.end - _FontTiles)
+   ld de, vBLK01.32
+   call _VideoMemCopyMonochrome
+
+   xor a
+   ld hl, _CrashTextTileMap
+   ld bc, (_CrashTextTileMap.end - _CrashTextTileMap)
+   ld de, vSCRN1
+   call _VideoMemCopy
+
+   xor a
+   ld hl, _MagicStringTitle
+   ld b, (_MagicStringCode.end - _MagicStringTitle)
+   ld de, vSCRN1.y1x2
+   call _VideoMemCopyFast
+
+   ld hl, _MagicStringVersion
+   ld a, [hl]
+   add "0"
+   ld hl, vSCRN1.y1x17
+   ld b, 1
+   xor a
+   call _VideoMemSetFast
+
+   call _GetCrashCode
+   xor a
+   ld de, vSCRN1.y11x13
+   call _VideoMemCopyFast
+
+   call _GetCrashText
+   ld de, vSCRN1.y13x1
+   xor a
+   call _VideoMemCopyFast
+
+   xor a
+   ld hl, _BuildDate + 2
+   ld b, (_BuildDate.end - (_BuildDate + 2))
+   ld de, vSCRN1.y16x1
+   call _VideoMemCopyFast
+
    call _IsGBColor
-   ret nz
-   ldh a, [rKEY1]
-   and a, KEY1F_DBLSPEED
-   jr nz, _SwitchCPUSpeed
+   jr z, .notGBC
+
+   ld a, 1
+   ld hl, _VRAM
+   ld bc, VRAM_SIZE
+   ld d, $00
+   call _VideoMemSet       ; Clear VRAM bank 1
+
+   call _SetBackgroundPaletteBlack
+   call _SetSpritePaletteBlack
+
+   xor a
+   ld hl, _CrashPalette
+   call _SetBackgroundPalette
+
+.notGBC:
+   ; Reset scroll registers
+   xor a
+   ldh [rSCY], a
+   ldh [rSCX], a
+
+   ; Turn on LCD
+   ld a, LCDCF_BLK01 | LCDCF_BG9C00 | LCDCF_BGON
+   call _ScreenOn
+      
+   ; During the first (blank) frame, initialize display registers
+   ld a, %11100100
+   call _SetDMGPalettes
+
+.loop
+   halt
+   nop
+   jr .loop
    ret
 
-; Set GBA/GBC CPU to SingleSpeed
-_SetCPUSlow::
-   call _IsGBColor
-   ret nz
-   ldh a, [rKEY1]
-   and a, KEY1F_DBLSPEED
-   jr z, _SwitchCPUSpeed
+_GetCrashCode:
+   ldh a, [hCrashCode]
+   ld de, _CrashCodes
+   ld h, $00
+   ld l, a
+REPT 2         ; 2^2 = 4
+   add hl, hl ; index * 4
+ENDR
+   add hl, de
+   ld b, CRASH_CODE_SIZE
    ret
 
-; Switches CPU Speed
-_SwitchCPUSpeed:
-   ldh a, [rIE]
-   ld b, a ; save IE
-   xor a, a
-   ldh [rIE], a
-   ld  a, P1F_GET_NONE
-   ldh [rP1], a
-   ld  a, KEY1F_PREPARE
-   ldh [rKEY1],a
+_CrashCodes:
+   DB "{04X:CRASH_EXECUTING_FF}"
+   DB "{04X:CRASH_NULL_POINTER}"
+   DB "{04X:CRASH_EXECUTING_RAM}"
+   DB "{04X:CRASH_RETURN_FROM_MAIN}"
+   DB "{04X:CRASH_STACK_OVERFLOW}"
+   DB "{04X:CRASH_STACK_UNDERFLOW}"
+   DB "{04X:CRASH_DIVIDE_BY_ZERO}"
+   DB "00FF"
+.end:
+   ASSERT (_CrashCodes.end - _CrashCodes) == ((NUMBER_OF_CRASH_CODES + 1) * CRASH_CODE_SIZE)
 
-   stop
-
-   ld a, b
-   ldh [rIE], a ; restore IE
+_GetCrashText:
+   ldh a, [hCrashCode]
+   ld de, _CrashText
+   ld h, $00
+   ld l, a
+REPT 4         ; 2^4 = 16
+   add hl, hl ; index * 16
+ENDR
+   add hl, de
+   ld b, CRASH_TEXT_SIZE
    ret
 
-; Calls function `hl` in bank `a` by switching rom banks
-; - a = bank where function is located
-; - hl = function
+_CrashText:
+; col# 0             15
+;      |..............|
+   DB "Executing $FF   "
+   DB "NULL pointer    "
+   DB "Executing RAM   "
+   DB "Return from Main"
+   DB "Stack overflow  "
+   DB "Stack underflow "
+   DB "Divide by zero  "
+   DB "Unknown error   "
+.end:
+   ASSERT (_CrashText.end - _CrashText) == ((NUMBER_OF_CRASH_CODES + 1) * CRASH_TEXT_SIZE)
+
+_CrashTextTileMap:
+; col# 0                 19          31
+;      |..................|...........|  ; row#
+   DB "                    ............" ; — 0
+   DB "                    ............" ; .
+   DB "                    ............" ; .
+   DB "       ERROR!       ............" ; .
+   DB " ------------------ ............" ; .
+   DB "                    ............" ; .
+   DB " Please report this ............" ; .
+   DB " crash, with a pic, ............" ; .
+   DB " to the developer   ............" ; .
+   DB " on GitHub.com :)   ............" ; .
+   DB "                    ............" ; .
+   DB " Error Code:        ............" ; .
+   DB "                    ............" ; .
+   DB "                    ............" ; .
+   DB "                    ............" ; .
+   DB " Build Date:        ............" ; .
+   DB "                    ............" ; .
+   DB "                    ............" ; — 17
+REPT 14                                  ; .
+   DB "................................" ; .
+ENDR                                     ; — 31
+.end:
+
+_CrashPalette:
+   DW (00 << 0) + (00 << 5) + (15 << 10)
+   DW (00 << 0) + (00 << 5) + (15 << 10)
+   DW (00 << 0) + (00 << 5) + (15 << 10)
+   DW (31 << 0) + (31 << 5) + (31 << 10)
+.end:
+
+ENDSECTION
+
+
+;###############################################################################
 ;
-; Arugments can be passed via `bc` and `de`
-; - bc = args
-; - de = args
-_FarCall::
-   ldh [hFarCallBank], a   ; Save destination bank
-
-   ld a, [rROMB0]          ; Push current bank
-   push af
-
-   ldh a, [hFarCallBank]   ; Set bank
-   ld [rROMB0], a
-
-   rst _CallHL             ; Call function at `hl`
-
-   pop af                  ; Pop bank and reset
-   ld [rROMB0], a
-
-   ret
-
-; Calls function `hl` in bank `a` by switching rom banks.
-; - a = bank where function is located
-; - hl = function
+;     SRAM HANDLERS
 ;
-; Preserves registers `bc` and `de`
-_FarCallPreserve::
-   push de
-   push bc
-   call _FarCall
-   pop bc
-   pop de
-   ret
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Load data from SRAM to address `de`
 ; Inputs:
 ; - hl = source address
-; - bc = size
+; - bc = byte count
 ; - de = dest address
 _LoadFromSRAM::
    call _EnableSRAM
@@ -550,7 +1181,7 @@ _LoadFromSRAM::
 ; Save data to SRAM to address `hl`
 ; Inputs:
 ; - hl = source address
-; - bc = size
+; - bc = byte count
 ; - de = dest address
 _SaveToSRAM::
    call _EnableSRAM
@@ -573,9 +1204,9 @@ _DisableSRAM:
 
 _VerifySRAMIntegrity::
    ; Check magic string
-   ld hl, _MagicString
-   ld b, (_MagicString.end - _MagicString)
-   ld de, sMagicString
+   ld hl, _MagicStringTitle
+   ld b, (_MagicStringCode.end - _MagicStringTitle)
+   ld de, sMagicStringTitle
    call _MemCompare
    jr nz, .checkFail
 
@@ -615,9 +1246,9 @@ _VerifySRAMIntegrity::
    ; fallthrough
 
 _SaveSRAMIntegrityData:
-   ld hl, _MagicString
-   ld b, (_MagicString.end - _MagicString)
-   ld de, sMagicString
+   ld hl, _MagicStringTitle
+   ld b, (_MagicStringCode.end - _MagicStringTitle)
+   ld de, sMagicStringTitle
    call _MemCopyFast
 
    ld hl, _ChecksumString
@@ -642,59 +1273,25 @@ _SaveSRAMIntegrityData:
    ret
 
 ; ASCII string saved to SRAM to mark checksum
-_ChecksumString: ; `SAVE CHECKSUM:`
-   DB 83, 65, 86, 69, 32, 67, 72, 69, 67, 75, 83, 85, 77, 58
+_ChecksumString:
+   DB "SAVE CHECKSUM:"
 .end:
 
 ; ASCII string saved to SRAM to mark checksum
-_DataString: ; `DATA START:`
-   DB 68, 65, 84, 65, 32, 83, 84, 65, 82, 84, 58
+_DataString:
+   DB "DATA START:"
 .end:
 
-; Calculates a 2 byte checksum
+ENDSECTION
+
+
+;###############################################################################
 ;
-; Inputs:
-; - hl = start address
-; - bc = size
+;     MULTIPLY & DIVIDE
 ;
-; Returns:
-; - de = checksum value
-;
-; Checksum is calculated as follows (BSD checksum):
-;
-; ```
-; u16 sum = 0
-; u8 * data = &start;
-; for i = 0 to size
-;    sum = (sum >> 1) | (sum << 15)
-;    sum += data[i]
-; ```
-_CalculateChecksum::
-   ld de, $0000 ; Checksum accumulator
+;###############################################################################
 
-.loop:
-   ld a, e     ; save lowest bit of de
-   srl d
-   rr e        ; de = (u16)de >> 1
-   rrca        ; a.7 = a.0
-   and a, %10000000
-   or a, d
-   ld d, a     ; de = ( (u16)de >> 1 ) | (e.0 << 15)
-
-   ld a, [hl+] ; a = read byte
-
-   add a, e
-   ld e, a
-   ld a, d
-   adc a, 0
-   ld d, a     ; de += (u16)a
-
-   dec bc
-   ld a, b
-   or a, c
-   jr nz, .loop
-
-   ret
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Super fast, unrolled, unsigned 8-bit multiplication.
 ;
@@ -771,9 +1368,8 @@ _Divide::
    ret
 
 .divideByZero:
-   ld a, $FF
-   ld c, $00
-   scf ; set carry
+   ld a, CRASH_DIVIDE_BY_ZERO
+   jp _CrashHandler
    ret
 
 ; Signed 8-bit division.
@@ -816,54 +1412,59 @@ _DivideSigned::
    ld a, b
    ret
 
+ENDSECTION
+
+
+;###############################################################################
+;
+;     RANDOM NUMBER GENERATOR
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
 ; Generates a pseudorandom 32-bit integer in BCDE
 ; using the LCG formula from cc65 rand():
 ;
-; x[i + 1] = (x[i] + 0xB3) * 0x01010101
+; x[i + 1] = (x[i] + $B3) * $01010101
 ;
 ; Returns:
-; - A = state bits 31-24 (which have the best entropy)
-; - B = state bits 31-24
-; - C = state bits 23-16
-; - D = state bits 15-08
-; - E = state bits 07-00 (which have the worst entropy)
+; - a = state bits 31-24 (which have the best entropy)
+; - b = state bits 31-24
+; - c = state bits 23-16
+; - d = state bits 15-08
+; - e = state bits 07-00 (which have the worst entropy)
 ;
 ; Trashes:
-; - HL
+; - hl
 _GetRandom::
    ld hl, hRandomState
    ld a, [hl]
-
    add a, $B3
    ld [hl+], a
    ld e, a
-
    adc a, [hl]
    ld [hl+], a
    ld d, a
-
    adc a, [hl]
    ld [hl+], a
    ld c, a
-
    adc a, [hl]
    ld [hl], a
    ld b, a
-
    ret
-
 
 ; Generates a pseudorandom 8-bit integer in A
 ;
 ; See: `_GetRandom`
 ;
 ; Returns:
-; - A = state bits 31-24 (which have the best entropy)
+; - a = state bits 31-24 (which have the best entropy)
 ;
 ; Preserves:
-; - BC
-; - DE
-; - HL
+; - bc
+; - de
+; - hl
 _GetRandomByte::
    push bc
    push de
@@ -877,17 +1478,17 @@ _GetRandomByte::
 ; Sets random state bits BCDE = DEDE
 ; 
 ; Inputs:
-; - DE = seed
+; - de = seed
 ;
 ; Returns:
-; - A = state bits 31-24 (which have the best entropy)
-; - B = state bits 31-24
-; - C = state bits 23-16
-; - D = state bits 15-08
-; - E = state bits 07-00 (which have the worst entropy)
+; - a = state bits 31-24 (which have the best entropy)
+; - b = state bits 31-24
+; - c = state bits 23-16
+; - d = state bits 15-08
+; - e = state bits 07-00 (which have the worst entropy)
 ;
 ; Trashes:
-; - HL
+; - hl
 _SetRandomSeed:
    ld hl, hRandomState
    ld a, d
@@ -900,11 +1501,22 @@ _SetRandomSeed:
    ld [hl], a
    jp _GetRandom
 
+ENDSECTION
+
+
+;###############################################################################
+;
+;     MEM SET
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
 ; Sets an area of memory to a specified value.
 ;
 ; Inputs:
 ; - hl = start address
-; - bc = size
+; - bc = byte count
 ; - d = value
 _MemSet::
    ld a, d
@@ -918,24 +1530,27 @@ _MemSet::
 ; Safely sets an area of VRAM memory to a specified value.
 ;
 ; Inputs:
+; - a = VRAM bank
 ; - hl = start address
-; - bc = size
+; - bc = byte count
 ; - d = value
 _VideoMemSet::
+   ldh [rVBK], a
+.loop:
    call _WaitForScreenBlank
    ld a, d
    ld [hl+], a
    dec bc
    ld a, b
    or a, c
-   jr nz, _VideoMemSet
+   jr nz, .loop
    ret
 
 ; Sets a small area (< 256 bytes) of memory to a specified value.
 ;
 ; Inputs:
 ; - hl = start address
-; - b = size
+; - b = bytes
 ; - a = value
 _MemSetFast::
    ld [hl+], a
@@ -946,23 +1561,25 @@ _MemSetFast::
 ; Safely sets a small area (< 256 bytes) of VRAM memory to a specified value.
 ;
 ; Inputs:
+; - a = VRAM bank
 ; - hl = start address
-; - b = size
-; - a = value
+; - b = bytes
+; - d = value
 _VideoMemSetFast::
-   push af
+   ldh [rVBK], a
+.loop:
    call _WaitForScreenBlank
-   pop af
+   ld a, d
    ld [hl+], a
    dec b
-   jr nz, _VideoMemSetFast
+   jr nz, .loop
    ret
 
 ; Randomizes an area of memory.
 ;
 ; Inputs:
 ; - hl = start address
-; - bc = size
+; - bc = byte count
 _MemSetRandom::
    call _GetRandomByte
    ld [hl+], a
@@ -975,23 +1592,37 @@ _MemSetRandom::
 ; Safely randomizes an area of VRAM memory.
 ;
 ; Inputs:
+; - a = VRAM bank
 ; - hl = start address
-; - bc = size
+; - bc = byte count
 _VideoMemSetRandom::
+   ldh [rVBK], a
+.loop:
    call _WaitForScreenBlank
    call _GetRandomByte
    ld [hl+], a
    dec bc
    ld a, b
    or a, c
-   jr nz, _VideoMemSetRandom
+   jr nz, .loop
    ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     MEM COPY
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Copies bytes from one area of memory to another.
 ;
 ; Inputs:
 ; - hl = source address
-; - bc = size
+; - bc = byte count
 ; - de = dest address
 _MemCopy::
    ld a, [hl+]
@@ -1006,10 +1637,13 @@ _MemCopy::
 ; Safely copies bytes from one area of memory to VRAM.
 ;
 ; Inputs:
+; - a = VRAM bank
 ; - hl = source address
-; - bc = size
+; - bc = byte count
 ; - de = dest address
 _VideoMemCopy::
+   ldh [rVBK], a
+.loop:
    call _WaitForScreenBlank
    ld a, [hl+]
    ld [de], a
@@ -1017,14 +1651,58 @@ _VideoMemCopy::
    dec bc
    ld a, b
    or a, c
-   jr nz, _VideoMemCopy
+   jr nz, .loop
+   ret
+
+; Copies bytes from one area of memory to another.
+;
+; Used to copy .1bpp formated tile data
+;
+; Inputs:
+; - hl = source address
+; - bc = byte count
+; - de = dest address
+_MemCopyMonochrome::
+   ld a, [hl+]
+   ld [de], a
+   inc de
+   ld [de], a
+   inc de
+   dec bc
+   ld a, b
+   or a, c
+   jr nz, _MemCopyMonochrome
+   ret
+
+; Safely copies bytes from one area of memory to VRAM.
+;
+; Used to copy .1bpp formated tile data
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - bc = byte count
+; - de = dest address
+_VideoMemCopyMonochrome::
+   ldh [rVBK], a
+.loop:
+   call _WaitForScreenBlank
+   ld a, [hl+]
+   ld [de], a
+   inc de
+   ld [de], a
+   inc de
+   dec bc
+   ld a, b
+   or a, c
+   jr nz, .loop
    ret
 
 ; Copies bytes from one small area (< 256 bytes) of memory to another.
 ;
 ; Inputs:
 ; - hl = source address
-; - b = size
+; - b = bytes
 ; - de = dest address
 _MemCopyFast::
    ld a, [hl+]
@@ -1037,23 +1715,26 @@ _MemCopyFast::
 ; Safely copies bytes from one small area (< 256 bytes) of memory to VRAM.
 ;
 ; Inputs:
+; - a = VRAM bank
 ; - hl = source address
-; - b = size
+; - b = bytes
 ; - de = dest address
 _VideoMemCopyFast::
+   ldh [rVBK], a
+.loop:
    call _WaitForScreenBlank
    ld a, [hl+]
    ld [de], a
    inc de
    dec b
-   jr nz, _VideoMemCopyFast
+   jr nz, .loop
    ret
 
 ; Copies bytes from one area of memory to another while incrementally stepping.
 ;
 ; Inputs:
 ; - hl = source address
-; - b = size
+; - b = bytes
 ; - c = source increment
 ; - de = dest address
 _MemCopyInc::
@@ -1071,11 +1752,14 @@ _MemCopyInc::
 ; Safely copies bytes from one area of memory to VRAM while incrementally stepping.
 ;
 ; Inputs:
+; - a = VRAM bank
 ; - hl = source address
-; - b = size
+; - b = bytes
 ; - c = source increment
 ; - de = dest address
 _VideoMemCopyInc::
+   ldh [rVBK], a
+.loop:
    call _WaitForScreenBlank
    ld a, [hl]
    ld [de], a
@@ -1085,14 +1769,25 @@ _VideoMemCopyInc::
    add hl, bc  ; increase source
    ld b, a     ; restore b
    dec b
-   jr nz, _VideoMemCopyInc
+   jr nz, .loop
    ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     MEM COMPARE
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Compares bytes from one area of memory to another.
 ;
 ; Inputs:
 ; - hl = source address
-; - b = size
+; - b = bytes
 ; - de = dest address
 ;
 ; Returns:
@@ -1117,14 +1812,16 @@ _MemCompare::
 ; Safely compares bytes from one area of memory to VRAM.
 ;
 ; Inputs:
+; - a = VRAM bank
 ; - hl = source address
-; - b = size
+; - b = bytes
 ; - de = dest address
 ;
 ; Returns:
 ; - z = equal
 ; - nz = not equal
 _VideoMemCompare::
+   ldh [rVBK], a
    ld c, $00
 .loop:
    call _WaitForScreenBlank
@@ -1140,6 +1837,17 @@ _VideoMemCompare::
    ld a, c
    and a, a
    ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     BACKGROUND FUNCTIONS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Get address of tile # `a` in `vBLK01`
 ;
@@ -1173,45 +1881,6 @@ REPT 4         ; 2^4 = 16
    add hl, hl ; index * 16
 ENDR
    add hl, de
-   ret
-
-; Sets all Background Palettes
-;
-; Inputs:
-; - hl = pointer to data for all 8 palettes
-_SetBackgroundPaletteAll::
-   xor a
-   call _SetBackgroundPalette
-   ld a, 1
-   call _SetBackgroundPalette
-   ld a, 2
-   call _SetBackgroundPalette
-   ld a, 3
-   call _SetBackgroundPalette
-   ld a, 4
-   call _SetBackgroundPalette
-   ld a, 5
-   call _SetBackgroundPalette
-   ld a, 6
-   call _SetBackgroundPalette
-   ld a, 7
-   call _SetBackgroundPalette
-   ret
-
-; Set Background Palette
-;
-; Inputs:
-; - a = palette number
-; - hl = pointer to data
-_SetBackgroundPalette::
-   swap a      ; \  multiply
-   rrca        ; /  palette by 8
-   set BCPSB_AUTOINC, a    ; auto increment
-   ldh [rBCPS], a
-REPT 8
-   ld a, [hl+]
-   ldh [rBCPD], a
-ENDR
    ret
 
 ; Set `vSCRN0` tile # to `a` at xy `bc`
@@ -1253,6 +1922,152 @@ ENDR
    ld [hl], a
    ret
 
+ENDSECTION
+
+
+;###############################################################################
+;
+;     SPRITE FUNCTIONS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Get address of sprite # `a` in `wShadowOAM`
+;
+; Input:
+; - a = sprite #
+;
+; Returns:
+; - hl = source address ( `wShadowOAM.#` )
+; - de = base address ( `wShadowOAM` )
+_GetSpriteAddress::
+   ld h, $00
+   ld l, a
+REPT 2         ; 2^2 = 4
+   add hl, hl  ; # * 4
+ENDR
+   ld de, wShadowOAM
+   add hl, de
+   ret
+
+; Set xy position of Sprite
+;
+; Inputs:
+; - b = x
+; - c = y
+; - hl = `wShadowOAM.#`
+_SetSpriteXY::
+   ld [hl], c
+   inc hl
+   ld [hl], b
+   ret
+
+; Set the tile of Sprite
+;
+; Inputs:
+; - a = tile
+; - hl = `wShadowOAM.#`
+_SetSpriteTile::
+   inc hl
+   inc hl
+   ld [hl], a
+   ret
+
+; Set the parameters of Sprite
+;
+; Inputs:
+; - a = params
+; - hl = `wShadowOAM.#`
+_SetSpriteParams::
+   inc hl
+   inc hl
+   inc hl
+   ld [hl], a
+   ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     PALETTE FUNCTIONS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Sets DMG Palettes
+;
+; - a = `rBGP` palette
+; - a = `rOBP0` palette
+; - a ~ `rOBP1` palette
+_SetDMGPalettes::
+	ldh [rBGP], a
+   ldh [rOBP0], a
+   cpl
+   ldh [rOBP1], a
+   ret
+
+; Sets all Background Palettes to full white
+_SetBackgroundPaletteWhite::
+   ld hl, _WhiteoutPalettes
+   jr _SetBackgroundPaletteAll
+
+; Sets all Background Palettes to full black
+_SetBackgroundPaletteBlack::
+   ld hl,_BlackoutPalettes
+   ;fallthrough
+
+; Sets all Background Palettes
+;
+; Inputs:
+; - hl = pointer to data for all 8 palettes
+_SetBackgroundPaletteAll::
+   xor a
+   call _SetBackgroundPalette
+   ld a, 1
+   call _SetBackgroundPalette
+   ld a, 2
+   call _SetBackgroundPalette
+   ld a, 3
+   call _SetBackgroundPalette
+   ld a, 4
+   call _SetBackgroundPalette
+   ld a, 5
+   call _SetBackgroundPalette
+   ld a, 6
+   call _SetBackgroundPalette
+   ld a, 7
+   call _SetBackgroundPalette
+   ret
+
+; Set Background Palette
+;
+; Inputs:
+; - a = palette number
+; - hl = pointer to data
+_SetBackgroundPalette::
+   swap a      ; \  multiply
+   rrca        ; /  palette by 8
+   set BCPSB_AUTOINC, a    ; auto increment
+   ldh [rBCPS], a
+REPT 8
+   ld a, [hl+]
+   ldh [rBCPD], a
+ENDR
+   ret
+
+; Sets all Sprite Palettes to full white
+_SetSpritePaletteWhite::
+   ld hl, _WhiteoutPalettes
+   jr _SetSpritePaletteAll
+
+; Sets all Sprite Palettes to full black
+_SetSpritePaletteBlack::
+   ld hl,_BlackoutPalettes
+   ;fallthrough
+
 ; Sets all Sprite Palettes
 ;
 ; Inputs:
@@ -1292,49 +2107,34 @@ REPT 8
 ENDR
    ret
 
-; Get address of sprite # `a` in `wShadowOAM`
-;
-; Input:
-; - a = sprite #
-;
-; Returns:
-; - hl = source address ( `wShadowOAM.#` )
-; - de = base address ( `wShadowOAM` )
-_GetSpriteAddress::
-   ld h, $00
-   ld l, a
-REPT 2         ; 2^2 = 4
-   add hl, hl  ; # * 4
+_WhiteoutPalettes:
+REPT 8
+   DW (31 << 0) + (31 << 5) + (31 << 10)
+   DW (31 << 0) + (31 << 5) + (31 << 10)
+   DW (31 << 0) + (31 << 5) + (31 << 10)
+   DW (31 << 0) + (31 << 5) + (31 << 10)
 ENDR
-   ld de, wShadowOAM
-   add hl, de
-   ret
+.end:
 
-;- b = x
-;- c = y
-;- hl = `wShadowOAM.#`
-_SetSpriteXY::
-   ld [hl], c
-   inc hl
-   ld [hl], b
-   ret
+_BlackoutPalettes:
+REPT 8
+   DW (00 << 0) + (00 << 5) + (00 << 10)
+   DW (00 << 0) + (00 << 5) + (00 << 10)
+   DW (00 << 0) + (00 << 5) + (00 << 10)
+   DW (00 << 0) + (00 << 5) + (00 << 10)
+ENDR
+.end:
 
-;- a = tile
-;- hl = `wShadowOAM.#`
-_SetSpriteTile::
-   inc hl
-   inc hl
-   ld [hl], a
-   ret
+ENDSECTION
 
-;- a = params
-;- hl = `wShadowOAM.#`
-_SetSpriteParams::
-   inc hl
-   inc hl
-   inc hl
-   ld [hl], a
-   ret
+
+;###############################################################################
+;
+;     OAM REFRESH
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Initializes OAM Refresh Function in HRAM
 _InitOAM:
@@ -1370,6 +2170,12 @@ ENDL
 
 ENDSECTION
 
+
+;###############################################################################
+;
+;     VRAM - TILE BLOCKS
+;
+;###############################################################################
 
 SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_VRAM]
 
@@ -1424,6 +2230,12 @@ ASSERT @ == _SCRN0
 ENDSECTION
 
 
+;###############################################################################
+;
+;     VRAM - SCRN0
+;
+;###############################################################################
+
 SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_SCRN0]
 
 ; VRAM Screen 0 Tilemap
@@ -1431,7 +2243,6 @@ SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_SCRN0]
 ; Write to a specific tile address using `vSCRN0.y#x#`,
 ; where both y# and x# are `0 <= # <= 31`
 vSCRN0::
-.start::
 FOR COL, SCRN_VY_B
 FOR ROW, SCRN_VX_B
 .y{d:COL}x{d:ROW}::
@@ -1445,6 +2256,12 @@ ASSERT @ == _SCRN1
 ENDSECTION
 
 
+;###############################################################################
+;
+;     VRAM - SCRN1
+;
+;###############################################################################
+
 SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_SCRN1]
 
 ; VRAM Screen 1 Tilemap
@@ -1452,7 +2269,6 @@ SECTION FRAGMENT "GBC-ENGINE-CORE - VRAM", VRAM[_SCRN1]
 ; Write to a specific tile address using `vSCRN1.y#x#`,
 ; where both y# and x# are `0 <= # <= 31`
 vSCRN1::
-.start::
 FOR COL, SCRN_VY_B
 FOR ROW, SCRN_VX_B
 .y{d:COL}x{d:ROW}::
@@ -1466,6 +2282,12 @@ ASSERT @ == _SRAM
 ENDSECTION
 
 
+;###############################################################################
+;
+;     SRAM
+;
+;###############################################################################
+
 SECTION "GBC-ENGINE-CORE - SRAM", SRAM[_SRAM]
 
 ; 256 byte buffer at the start of SRAM
@@ -1473,8 +2295,14 @@ sBuffer:
    DS $100
 
 ; Copy of the Magic String used to verify save integrity
-sMagicString:
-   DS (_MagicString.end - _MagicString)
+sMagicStringTitle:
+   DS (_MagicStringTitle.end - _MagicStringTitle)
+
+sMagicStringCode:
+   DS (_MagicStringCode.end - _MagicStringCode)
+
+sMagicStringVersion:
+   DS (_MagicStringVersion.end - _MagicStringVersion)
 
    DS 16 ; padding
 
@@ -1497,15 +2325,20 @@ sDataStart:
 ENDSECTION
 
 
+;###############################################################################
+;
+;     WRAM
+;
+;###############################################################################
+
 SECTION FRAGMENT "GBC-ENGINE-CORE - WRAM", WRAM0[_RAM]
 
-wStack:     DS RAM_STACK_SIZE
+wStackBottom:
+   DS STACK_SIZE - 2
 wStackTop:
+   DS 2
 
-ENDSECTION
-
-
-SECTION FRAGMENT "GBC-ENGINE-CORE - WRAM", WRAM0, ALIGN[8]
+DS ALIGN[8]
 
 ; DMA will be used to copy this to OAM
 ;
@@ -1524,9 +2357,16 @@ FOR SPRITE, OAM_COUNT
 .{d:SPRITE}::
     DS sizeof_OAM_ATTRS
 ENDR
+.end::
 
 ENDSECTION
 
+
+;###############################################################################
+;
+;     OAM RAM
+;
+;###############################################################################
 
 SECTION "GBC-ENGINE-CORE - OAM", OAM[_OAMRAM]
 
@@ -1550,9 +2390,16 @@ FOR SPRITE, OAM_COUNT
 .{d:SPRITE}::
     DS sizeof_OAM_ATTRS
 ENDR
+.end::
 
 ENDSECTION
 
+
+;###############################################################################
+;
+;     HRAM
+;
+;###############################################################################
 
 SECTION "GBC-ENGINE-CORE - HRAM", HRAM[_HRAM]
 
@@ -1562,6 +2409,8 @@ hIsGBAdvanceFlag: DS 1
 hRandomState:
    DS 4
 .end:
+
+hCrashCode::      DS 1
 
 hIsVBlankFlag:    DS 1
 
@@ -1577,21 +2426,41 @@ hKeysHeld::       DS 1
 hKeysPressed::    DS 1
 hKeysReleased::   DS 1
 
+hCurrentBank:     DS 1
 hFarCallBank:     DS 1
 
 ENDSECTION
 
 
-PURGE VRAM_SIZE        
-PURGE TILE_BLOCK_SIZE  
-PURGE TILE_SIZE
-PURGE OFFSET   
+;###############################################################################
+;
+;     PURGE MACROS
+;
+;###############################################################################
 
-PURGE SRAM_SIZE        
-PURGE SRAM_BUFFER_SIZE 
+PURGE create_gb_engine_core_charmap
 
-PURGE RAM_SIZE         
-PURGE RAM_STACK_SIZE   
 
-PURGE HRAM_SIZE 
-PURGE hTempStack
+;###############################################################################
+;
+;     PURGE VARIABLES
+;
+;###############################################################################
+
+PURGE REQUIRED_RGBDS_VERSION, REQUIRED_HARDWARE_VERSION, \
+      CRASH_CODE_SIZE, CRASH_TEXT_SIZE, \
+      VRAM_SIZE, TILE_BLOCK_SIZE, TILE_SIZE, OFFSET, \
+      SRAM_SIZE, SRAM_BUFFER_SIZE, \
+      RAM_SIZE, STACK_SIZE, STACK_BUFFER, \
+      HRAM_SIZE, hTempStack
+
+
+;###############################################################################
+;
+;     POP LINKER STACKS
+;
+;###############################################################################
+
+POPC ; charmap
+POPS ; section
+POPO ; options
