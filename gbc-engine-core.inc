@@ -2438,7 +2438,7 @@ ENDSECTION
 ;
 ;###############################################################################
 
-PURGE create_gb_engine_core_charmap
+PURGE check_rgbds_version, create_gb_engine_core_charmap
 
 
 ;###############################################################################
