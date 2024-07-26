@@ -1094,6 +1094,7 @@ gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to
    ld hl, _MagicStringVersion
    ld a, [hl]
    add "0"
+   ld d, a
    ld hl, vSCRN1.y1x17
    ld b, 1
    xor a
