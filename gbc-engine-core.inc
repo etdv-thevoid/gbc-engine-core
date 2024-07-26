@@ -118,6 +118,8 @@ ENDM
 DEF TRUE    EQU 1
 DEF FALSE   EQU 0
 
+DEF BOOTUP_C_SGB EQU $14
+
 RSRESET
 DEF CRASH_EXECUTING_FF     RB 1
 DEF CRASH_NULL_POINTER     RB 1
@@ -674,7 +676,27 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Checks if running on GBC hardware
+; Checks if running on MGB hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBMonochrome::
+   ldh a, [hIsGBMonochromeFlag]
+   and a
+   ret
+
+; Checks if running on SGB hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBSuper::
+   ldh a, [hIsGBSuperFlag]
+   and a
+   ret
+
+; Checks if running on CGB hardware
 ;
 ; Returns:
 ; - nz = TRUE
@@ -684,7 +706,7 @@ _IsGBColor::
    and a
    ret
 
-; Checks if running on GBA hardware
+; Checks if running on AGB hardware
 ;
 ; Returns:
 ; - nz = TRUE
@@ -891,25 +913,61 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
+; Initial boot routine. Determines hardware model from
+; the initial values of the following registers:
+;
+; - a = Monochrome vs Color
+; - b = Color vs Advance
+; - c = Super Game Boy
+; - d = 
+;
 _Start:
-   cp a, BOOTUP_A_CGB      ; Check Hardware model (GBC)
-   ld a, FALSE
-   jr nz, .notGBC
-   ld a, TRUE
-   ldh [hIsGBColorFlag], a
+   ld e, a                 ; Backup a into e (non-important startup register)
 
-   ld a, b
-   cp a, BOOTUP_B_AGB      ; Check Hardware model (GBA)
-   ld a, FALSE
-   jr nz, .notGBA
-   ld a, TRUE
-   ; fallthrough
-
-.notGBC:
+   xor a                   ; clear hardware flags
+   ldh [hIsGBMonochromeFlag], a
+   ldh [hIsGBSuperFlag], a
    ldh [hIsGBColorFlag], a
-.notGBA:
    ldh [hIsGBAdvanceFlag], a
-   ; fallthrough
+
+   ld a, e                 ; Check for Hardware model MGB
+   sub a, BOOTUP_A_CGB     ; Possible Hardware: MGB, SGB, CGB, AGB
+   jr nz, .isMGB
+
+   ld a, c                 ; Check for Hardware model SGB
+   sub a, BOOTUP_C_SGB     ; Possible Hardware: SGB, CGB, AGB
+   jr z, .isCGB
+
+   ld a, d                 ; Check for Hardware model CGB/AGB in MGB compat. mode
+   and a                   ; Possible Hardware: CGB, AGB
+   jr z, .isMGB
+
+   ld a, b                 ; Check for Hardware model (GBA)
+   and a, BOOTUP_B_AGB     ; Possible Hardware: CGB, AGB
+   jr nz, .isAGB
+   jr .isCGB
+   
+.isMGB:
+   ld a, TRUE
+   ldh [hIsGBMonochromeFlag], a
+   jr _Reset
+
+.isSGB:
+   ld a, TRUE              ; SGB has all the functionalities of MGB
+   ldh [hIsGBMonochromeFlag], a
+   ldh [hIsGBSuperFlag], a
+   jr _Reset
+
+.isCGB:
+   ld a, TRUE
+   ldh [hIsGBColorFlag], a
+   jr _Reset
+
+.isAGB:
+   ld a, TRUE              ; AGB has all the functionalities of CGB
+   ldh [hIsGBColorFlag], a
+   ldh [hIsGBAdvanceFlag], a
+   jr _Reset
 
 _Reset:
    di                      ; disble interrupts
@@ -946,7 +1004,7 @@ _Reset:
    call _VideoMemSet       ; Clear VRAM bank 0
 
    call _IsGBColor
-   jr z, .notGBC
+   jr z, .notColorEnabled
 
    ld a, 1
    ld hl, _VRAM
@@ -957,7 +1015,7 @@ _Reset:
    call _SetBackgroundPaletteBlack
    call _SetSpritePaletteBlack
 
-.notGBC:
+.notColorEnabled:
    ld hl, _HRAM + (hRandomState.end - _HRAM)
    ld b, HRAM_SIZE - (hRandomState.end - _HRAM)
    ld a, $00
@@ -1058,7 +1116,7 @@ gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to
    call _VideoMemCopyFast
 
    call _IsGBColor
-   jr z, .notGBC
+   jr z, .notColorEnabled
 
    ld a, 1
    ld hl, _VRAM
@@ -1073,7 +1131,7 @@ gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to
    ld hl, _CrashPalette
    call _SetBackgroundPalette
 
-.notGBC:
+.notColorEnabled:
    ; Reset scroll registers
    xor a
    ldh [rSCY], a
@@ -2489,8 +2547,10 @@ ENDSECTION
 
 SECTION "GBC-ENGINE-CORE - HRAM", HRAM[_HRAM]
 
-hIsGBColorFlag:   DS 1
-hIsGBAdvanceFlag: DS 1
+hIsGBMonochromeFlag: DS 1
+hIsGBSuperFlag:      DS 1
+hIsGBColorFlag:      DS 1
+hIsGBAdvanceFlag:    DS 1
 
 hRandomState:
    DS 4
@@ -2534,6 +2594,7 @@ PURGE check_rgbds_version, create_gb_engine_core_charmap
 ;###############################################################################
 
 PURGE REQUIRED_RGBDS_VERSION, REQUIRED_HARDWARE_VERSION, \
+      BOOTUP_C_SGB, \
       CRASH_CODE_SIZE, CRASH_TEXT_SIZE, \
       VRAM_SIZE, TILE_BLOCK_SIZE, TILE_SIZE, OFFSET, \
       SRAM_SIZE, SRAM_BUFFER_SIZE, \
