@@ -872,62 +872,6 @@ ENDSECTION
 
 ;###############################################################################
 ;
-;     CHECKSUM
-;
-;###############################################################################
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-; Calculates a 2 byte checksum
-;
-; Inputs:
-; - hl = start address
-; - bc = byte count
-;
-; Returns:
-; - de = checksum value
-;
-; Checksum is calculated as follows (BSD checksum):
-;
-; ```
-; u16 sum = 0
-; u8 * data = &start;
-; for i = 0 to size
-;    sum = (sum >> 1) | (sum << 15)
-;    sum += data[i]
-; ```
-_CalculateChecksum::
-   ld de, $0000 ; Checksum accumulator
-
-.loop:
-   ld a, e     ; save lowest bit of de
-   srl d
-   rr e        ; de = (u16)de >> 1
-   rrca        ; a.7 = a.0
-   and a, %10000000
-   or a, d
-   ld d, a     ; de = ( (u16)de >> 1 ) | (e.0 << 15)
-
-   ld a, [hl+] ; a = read byte
-
-   add a, e
-   ld e, a
-   ld a, d
-   adc a, 0
-   ld d, a     ; de += (u16)a
-
-   dec bc
-   ld a, b
-   or a, c
-   jr nz, .loop
-
-   ret
-
-ENDSECTION
-
-
-;###############################################################################
-;
 ;     EMPTY SPACE
 ;
 ;###############################################################################
@@ -1367,6 +1311,62 @@ _ChecksumString:
 _DataString:
    DB "DATA START:"
 .end:
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     CHECKSUM
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Calculates a 2 byte checksum
+;
+; Inputs:
+; - hl = start address
+; - bc = byte count
+;
+; Returns:
+; - de = checksum value
+;
+; Checksum is calculated as follows (BSD checksum):
+;
+; ```
+; u16 sum = 0
+; u8 * data = &start;
+; for i = 0 to size
+;    sum = (sum >> 1) | (sum << 15)
+;    sum += data[i]
+; ```
+_CalculateChecksum::
+   ld de, $0000 ; Checksum accumulator
+
+.loop:
+   ld a, e     ; save lowest bit of de
+   srl d
+   rr e        ; de = (u16)de >> 1
+   rrca        ; a.7 = a.0
+   and a, %10000000
+   or a, d
+   ld d, a     ; de = ( (u16)de >> 1 ) | (e.0 << 15)
+
+   ld a, [hl+] ; a = read byte
+
+   add a, e
+   ld e, a
+   ld a, d
+   adc a, 0
+   ld d, a     ; de += (u16)a
+
+   dec bc
+   ld a, b
+   or a, c
+   jr nz, .loop
+
+   ret
 
 ENDSECTION
 
