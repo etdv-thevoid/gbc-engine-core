@@ -798,6 +798,80 @@ ENDSECTION
 
 ;###############################################################################
 ;
+;     JUMP TABLES
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Loads jump table from address in `hl` and jumps to address number a
+;
+; Inputs:
+; - a = jump table entry
+; - hl = jump table address
+;
+; Trashes:
+; - de
+;
+; Jump Table Format:
+;```
+;_ExampleJumpTable:
+;     DW _Address1
+;     DW _Address2
+;     DW _Address3
+;     DW _NULL
+;```
+_JumpTable::
+   ld d, 0
+   ld e, a
+   add hl, de
+   add hl, de
+   ld a, [hl+]
+   ld h, [hl]
+   ld l, a
+   rst _CallHL
+   ret
+
+; Loads jump table (with banks) from address in `hl` and jumps to address number a
+;
+; Inputs:
+; - a = jump table entry
+; - hl = jump table address
+;
+; Trashes:
+; - de
+;
+; Jump Table Format:
+;```
+;_ExampleJumpTable:
+;     DB BANK(_Address1)
+;     DW _Address1
+;     DB BANK(_Address2)
+;     DW _Address2
+;     DB BANK(_Address3)
+;     DW _Address3
+;     DB BANK(_NULL)
+;     DW _NULL
+;```
+_JumpTableBank::
+   ld d, 0
+   ld e, a
+   add hl, de
+   add hl, de
+   add hl, de
+   ld a, [hl+]
+   ld d, a
+   ld a, [hl+]
+   ld h, [hl]
+   ld l, a
+   ld a, d
+   jp _FarCall
+
+ENDSECTION
+
+
+;###############################################################################
+;
 ;     CHECKSUM
 ;
 ;###############################################################################
