@@ -507,8 +507,8 @@ _ScanKeys::
    ldh [rP1], a
 
    ld a, b                 ; check if reset key combo is pressed
-   and a, PADF_START | PADF_SELECT | PADF_B | PADF_A
-   jr nz, .tryReset
+   cp a, PADF_START | PADF_SELECT | PADF_B | PADF_A
+   jr z, .tryReset
 
 .noReset:                  ; b = new state
    ldh a, [hKeysHeld]
@@ -543,35 +543,16 @@ ENDR
    jr z, .noReset          ; else skip
    jp _Reset
 
-ENDSECTION
-
-
-;###############################################################################
-;
-;     HARDWARE CHECKS
-;
-;###############################################################################
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-; Checks if running on GBC hardware
-;
-; Returns:
-; - nz = TRUE
-; - z = FALSE
-_IsGBColor::
-   ldh a, [hIsGBColorFlag]
-   and a
+; Enables Soft Reset
+_EnableSoftReset::
+   ld a, TRUE
+   ldh [hCanResetFlag], a
    ret
 
-; Checks if running on GBA hardware
-;
-; Returns:
-; - nz = TRUE
-; - z = FALSE
-_IsGBAdvance::
-   ldh a, [hIsGBAdvanceFlag]
-   and a
+; Disables Soft Reset
+_DisableSoftReset::
+   ld a, FALSE
+   ldh [hCanResetFlag], a
    ret
 
 ENDSECTION
@@ -680,6 +661,37 @@ IF (STACK_SIZE % $100 == 0)
 ELSE
    WARN "STACK_SIZE must be a multiple of $100 bytes for effecient stack underflow checking"
 ENDC
+   ret
+
+ENDSECTION
+
+
+;###############################################################################
+;
+;     HARDWARE CHECKS
+;
+;###############################################################################
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Checks if running on GBC hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBColor::
+   ldh a, [hIsGBColorFlag]
+   and a
+   ret
+
+; Checks if running on GBA hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBAdvance::
+   ldh a, [hIsGBAdvanceFlag]
+   and a
    ret
 
 ENDSECTION
