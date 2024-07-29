@@ -1,5 +1,5 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION    EQUS "0.6.0"
+DEF GBC_ENGINE_CORE_VERSION    EQUS "0.6.1"
 
 ; REQUIRED RGBDS VERSION
 DEF REQUIRED_RGBDS_VERSION     EQUS "0.7.0"
@@ -2567,7 +2567,7 @@ hTIMHandler:      DS 2
 hSIOHandler:      DS 2
 hJOYHandler:      DS 2
 
-hCanResetFlag::   DS 1
+hCanResetFlag:    DS 1
 
 hKeysHeld::       DS 1
 hKeysPressed::    DS 1
