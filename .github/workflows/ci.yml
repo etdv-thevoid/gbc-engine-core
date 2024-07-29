@@ -1,0 +1,56 @@
+# Continuous Integration Build Workflow
+name: "CI"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  RGBDS_VERSION: "v0.7.0"
+  HARDWARE_VERSION: "v4.9.1"
+
+jobs:
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    steps:
+      # INSTALL DEPENDENCIES
+      - name: "Install build dependencies"
+        run: |
+          sudo apt-get update
+          sudo apt-get install bison gcc git make wget -y;
+          
+      # CHECKOUT RGBDS
+      - name: "Checkout gbdev/rgbds"
+        uses: actions/checkout@v4
+        with:
+          path: rgbds
+          ref: ${{ env.RGBDS_VERSION }}
+          repository: gbdev/rgbds
+      
+      # INSTALL RGBDS
+      - name: "Install gbdev/rgbds"
+        working-directory: rgbds
+        run: |
+          sudo make install
+
+      # CHECKOUT REPOSITORY
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      # CHECKOUT HARDWARE.INC
+      - name: "Checkout gbdev/hardware.inc"
+        uses: actions/checkout@v4
+        with:
+          path: hardware
+          ref: ${{ env.HARDWARE_VERSION }}
+          repository: gbdev/hardware.inc
+
+      # COMPILE
+      - name: "Compile"
+        run: |
+          rgbasm gbc-engine-core.inc -P ./hardware/hardware.inc -o gbc-engine-core.obj
