@@ -25,15 +25,17 @@ PUSHO ; options
 **
 *******************************************************************************/
 
-; Call with the expected version string to ensure your code
-; is compatible with the INCLUDE'd version of `gbc-engine-core.inc`.
-;
-; Usage: `gbc_engine_core_version` `<min_ver>`
-;
-; Examples:
-; - `gbc_engine_core_version 1.2.3`
-; - `gbc_engine_core_version 1.2` (equivalent to 1.2.0)
-; - `gbc_engine_core_version 1` (equivalent to 1.0.0)
+/*
+Call with the expected version string to ensure your code
+is compatible with the INCLUDE'd version of `gbc-engine-core.inc`.
+
+Usage: `gbc_engine_core_version` `<min_ver>`
+
+Examples:
+- `gbc_engine_core_version 1.2.3`
+- `gbc_engine_core_version 1.2` (equivalent to 1.2.0)
+- `gbc_engine_core_version 1` (equivalent to 1.0.0)
+*/
 MACRO gbc_engine_core_version
     REDEF CURRENT_VERSION EQUS STRRPL("{GBC_ENGINE_CORE_VERSION}", ".", ",")
     REDEF EXPECTED_VERSION EQUS STRRPL("\1", ".", ",")
@@ -53,15 +55,17 @@ MACRO gbc_engine_core_version
     PURGE internal_core_check
 ENDM
 
-; Call with the expected version string to ensure your code
-; is compatible with current version of RGBDS binaries.
-;
-; Usage: `check_rgbds_version` `<min_ver>`
-;
-; Examples:
-; - `check_rgbds_version 1.2.3`
-; - `check_rgbds_version 1.2` (equivalent to 1.2.0)
-; - `check_rgbds_version 1` (equivalent to 1.0.0)
+/*
+Call with the expected version string to ensure your code
+is compatible with current version of RGBDS binaries.
+
+Usage: `check_rgbds_version` `<min_ver>`
+
+Examples:
+- `check_rgbds_version 1.2.3`
+- `check_rgbds_version 1.2` (equivalent to 1.2.0)
+- `check_rgbds_version 1` (equivalent to 1.0.0)
+*/
 MACRO check_rgbds_version
     IF (!DEF(__RGBDS_MAJOR__) || !DEF(__RGBDS_MINOR__) || !DEF(__RGBDS_PATCH__) || DEF(__RGBDS_RC__))
       FAIL "RGBDS version \1 is required, which is incompatible with current version"
@@ -182,13 +186,15 @@ DEF hTempStack       EQU rIE - 1
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0[$0000]
 
-; RST Vector to perform soft reset
-; 
-; This traps jumps to $0000, which is a common "default" pointer.
-; $FFFF is another one, but reads rIE as the instruction byte;
-; after which the Program Counter wraps around to address $0000.
-; Thus, we put two `nop`s that may serve as operands before soft-crashing.
-; The operand(s) will always be 0, so even jumps will work fine. Nice!
+/*
+RST Vector to catch null pointer values and cause a crash
+
+This traps jumps to $0000, which is a common "default" pointer.
+$FFFF is another one, but reads rIE as the instruction byte;
+after which the Program Counter wraps around to address $0000.
+Thus, we put two `nop`s that may serve as operands before soft-crashing.
+The operand(s) will always be 0, so even jumps will work fine. Nice!
+*/
 _NULL::
     nop
     nop
@@ -197,12 +203,12 @@ _NULL::
 
 DS $0008 - @, $FF
 
-; RST Vector for `jp hl` with additional error handling
-;
-; Crashes if attempting to jump to RAM
-;
-; By default, called by the 
-; the interrupt handler executor, `_FarCall`, and `_FarCallPreserve`
+/*
+RST Vector for `jp hl` with additional error handling
+
+Crashes if attempting to jump to RAM. By default, called by the 
+the interrupt handler executor, `_FarCall`, and `_FarCallPreserve`
+*/
 _CallHL::
     bit 7, h
     ld a, CRASH_EXECUTING_RAM
@@ -211,68 +217,80 @@ _CallHL::
 
 DS $0010 - @, $FF
 
-; RST Vector to set `hVBLHandler`
-; 
-; Inputs:
-; - bc = function pointer
+/*
+RST Vector to set the VBlank interrupt handler
+
+Inputs:
+- bc = function pointer
+*/
 _SetVBLHandler::
     ld hl, hVBLHandler
     jr _SetInterruptHandler
 
 DS $0018 - @, $FF
 
-; RST Vector to set `hLCDHandler`
-; 
-; Inputs:
-; - bc = function pointer
+/*
+RST Vector to set the LCD Stat interrupt handler
+
+Inputs:
+- bc = function pointer
+*/
 _SetLCDHandler::
     ld hl, hLCDHandler
     jr _SetInterruptHandler
 
 DS $0020 - @, $FF
 
-; RST Vector to set `hTIMHandler`
-; 
-; Inputs:
-; - bc = function pointer
+/*
+RST Vector to set the Timer interrupt handler
+
+Inputs:
+- bc = function pointer
+*/
 _SetTIMHandler::
     ld hl, hTIMHandler
     jr _SetInterruptHandler
 
 DS $0028 - @, $FF
 
-; RST Vector to set `hSIOHandler`
-; 
-; Inputs:
-; - bc = function pointer
+/*
+RST Vector to set the Serial interrupt handler
+
+Inputs:
+- bc = function pointer
+*/
 _SetSIOHandler::
     ld hl, hSIOHandler
     jr _SetInterruptHandler
 
 DS $0030 - @, $FF
 
-; RST Vector to set `hJOYHandler`
-; 
-; Inputs:
-; - bc = function pointer
+/*
+RST Vector to set the Joypad interrupt handler
+
+Inputs:
+- bc = function pointer
+*/
 _SetJOYHandler::
     ld hl, hJOYHandler
     jr _SetInterruptHandler
 
 DS $0038 - @, $FF
 
-; RST Vector to perform a crash
-;
-; This traps arbitrary code executions of the byte $FF,
-; which is the recommended "default" padding value for empty ROM space.
-; The opcode for rst $38 is $FF, so any attempts to execute code in
-; such empty space will instead end up here.
-;
-; It can also be called directly to force any crash code by setting
-; `hCrashCode` before calling `rst _Crash`.
-;
-; Inputs:
-; - `hCrashCode`
+/*
+RST Vector to force a crash
+
+This traps arbitrary code executions of the byte $FF,
+which is the recommended "default" padding value for empty ROM space.
+The opcode for rst $38 is $FF, so any attempts to execute code in
+such empty space will instead end up here.
+
+It can also be called directly to force any crash code by setting
+`hCrashCode` before calling `rst _Crash`.
+
+Inputs:
+- `hCrashCode`
+*/
 _Crash::
     ldh a, [hCrashCode]
     jp _CrashHandler
