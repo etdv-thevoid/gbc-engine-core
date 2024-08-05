@@ -1549,58 +1549,6 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Generates a pseudorandom 32-bit integer in BCDE
-; using the LCG formula from cc65 rand():
-;
-; x[i + 1] = (x[i] + $B3) * $01010101
-;
-; Returns:
-; - a = state bits 31-24 (which have the best entropy)
-; - b = state bits 31-24
-; - c = state bits 23-16
-; - d = state bits 15-08
-; - e = state bits 07-00 (which have the worst entropy)
-;
-; Trashes:
-; - hl
-_GetRandom::
-    ld hl, hRandomState
-    ld a, [hl]
-    add a, $B3
-    ld [hl+], a
-    ld e, a
-    adc a, [hl]
-    ld [hl+], a
-    ld d, a
-    adc a, [hl]
-    ld [hl+], a
-    ld c, a
-    adc a, [hl]
-    ld [hl], a
-    ld b, a
-    ret
-
-; Generates a pseudorandom 8-bit integer in A
-;
-; See: `_GetRandom`
-;
-; Returns:
-; - a = state bits 31-24 (which have the best entropy)
-;
-; Preserves:
-; - bc
-; - de
-; - hl
-_GetRandomByte::
-    push bc
-    push de
-    push hl
-    call _GetRandom
-    pop hl
-    pop de
-    pop bc
-    ret
-
 ; Sets random state bits BCDE = DEDE
 ; 
 ; Inputs:
@@ -1625,7 +1573,69 @@ _SetRandomSeed:
     ld [hl+], a
     ld a, e
     ld [hl], a
-    jp _GetRandom
+    ; fallthrough
+
+; Generates a pseudorandom 32-bit integer in BCDE
+; using the LCG formula from cc65 rand():
+;
+; x[i + 1] = (x[i] + $B3) * $01010101
+;
+; Returns:
+; - a = state bits 31-24 (which have the best entropy)
+; - b = state bits 31-24
+; - c = state bits 23-16
+; - d = state bits 15-08
+; - e = state bits 07-00 (which have the worst entropy)
+;
+; Trashes:
+; - hl
+_GetRandom::
+    scf 
+    ccf 
+
+    ld hl, hRandomState
+    ld a, [hl]
+    
+    add a, $B3
+    ld [hl+], a
+    ld e, a
+    
+    adc a, [hl]
+    ld [hl+], a
+    ld d, a
+    
+    adc a, [hl]
+    ld [hl+], a
+    xor a, e
+    ld c, a
+    
+    adc a, [hl]
+    ld [hl], a
+    xor a, d
+    ld b, a
+    
+    ret
+
+; Generates a pseudorandom 8-bit integer in A
+;
+; See: `_GetRandom`
+;
+; Returns:
+; - a = state bits 31-24 (which have the best entropy)
+;
+; Preserves:
+; - bc
+; - de
+; - hl
+_GetRandomByte::
+    push bc
+    push de
+    push hl
+    call _GetRandom
+    pop hl
+    pop de
+    pop bc
+    ret
 
 ENDSECTION
 
