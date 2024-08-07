@@ -125,20 +125,21 @@ DEF FALSE   EQU 0
 DEF BOOTUP_C_SGB EQU $14
 
 RSRESET
-DEF CRASH_EXECUTING_FF     RB 1
-DEF CRASH_NULL_POINTER     RB 1
-DEF CRASH_EXECUTING_RAM    RB 1
-DEF CRASH_RETURN_FROM_MAIN RB 1
-DEF CRASH_STACK_OVERFLOW   RB 1
-DEF CRASH_STACK_UNDERFLOW  RB 1
-DEF CRASH_DIVIDE_BY_ZERO   RB 1
+DEF CRASH_EXECUTING_FF      RB 1
+DEF CRASH_NULL_POINTER      RB 1
+DEF CRASH_EXECUTING_RAM     RB 1
+DEF CRASH_RETURN_FROM_MAIN  RB 1
+DEF CRASH_STACK_OVERFLOW    RB 1
+DEF CRASH_STACK_UNDERFLOW   RB 1
+DEF CRASH_DIVIDE_BY_ZERO    RB 1
+DEF CRASH_HARDWARE          RB 1
 
-DEF NUMBER_OF_CRASH_CODES  RB 0
+DEF NUMBER_OF_CRASH_CODES   RB 0
 
-DEF CRASH_UNKNOWN_ERROR    RB 1
+DEF CRASH_UNKNOWN_ERROR     RB 1
 
 DEF CRASH_CODE_SIZE  EQU 4
-DEF CRASH_TEXT_SIZE  EQU 16
+DEF CRASH_TEXT_SIZE  EQU 18
 
 DEF VRAM_SIZE        EQU _SRAM - _VRAM
 DEF TILE_BLOCK_SIZE  EQU (VRAM_SIZE - (_SRAM - _SCRN0)) / 3
@@ -1023,6 +1024,15 @@ _Reset:
     call _InitOAM           ; With HRAM filled with $00, copy OAM Refresh function to HRAM
     call _RefreshOAM        ; With RAM filled with $00, this will clear also clear OAM
 
+    ld a, [_MagicStringCode.end]
+    cp a, CART_COMPATIBLE_GBC
+    jr nz, .done
+
+    call _IsGBColor
+    ld a, CRASH_HARDWARE
+    jr z, _CrashHandler
+
+.done:
 ASSERT BANK(_Main) == 0, #"""
 Function `_Main` should be in ROM0!
 gbc-engine-core hands off code execution to a function labeled `_Main` when done with initial setup.
@@ -1171,6 +1181,7 @@ _CrashCodes:
     DB "{04X:CRASH_STACK_OVERFLOW}"
     DB "{04X:CRASH_STACK_UNDERFLOW}"
     DB "{04X:CRASH_DIVIDE_BY_ZERO}"
+    DB "{04X:CRASH_HARDWARE}"
     DB "00FF"
 .end:
     ASSERT (_CrashCodes.end - _CrashCodes) == ((NUMBER_OF_CRASH_CODES + 1) * CRASH_CODE_SIZE)
@@ -1180,30 +1191,31 @@ _GetCrashText:
     ld de, _CrashText
     ld h, $00
     ld l, a
-REPT 4         ; 2^4 = 16
-    add hl, hl ; index * 16
+REPT 5         ; 2^5 = 32
+    add hl, hl ; index * 32
 ENDR
     add hl, de
     ld b, CRASH_TEXT_SIZE
     ret
 
 _CrashText:
-; col# 0             15
-;      |..............|
-    DB "Executing $FF   "
-    DB "NULL pointer    "
-    DB "Executing RAM   "
-    DB "Return from Main"
-    DB "Stack overflow  "
-    DB "Stack underflow "
-    DB "Divide by zero  "
-    DB "Unknown error   "
+; col#  0                 19          31
+;       |..................|...........|
+    DB "Executing $FF                   "
+    DB "NULL pointer                    "
+    DB "Executing RAM                   "
+    DB "Return from Main                "
+    DB "Stack overflow                  "
+    DB "Stack underflow                 "
+    DB "Divide by zero                  "
+    DB "GBC-only cartridge              "
+    DB "Unknown error                   "
 .end:
-    ASSERT (_CrashText.end - _CrashText) == ((NUMBER_OF_CRASH_CODES + 1) * CRASH_TEXT_SIZE)
+    ASSERT (_CrashText.end - _CrashText) == ((NUMBER_OF_CRASH_CODES + 1) * 32)
 
 _CrashTextTileMap:
-; col# 0                 19          31
-;      |..................|...........|  ; row#
+; col#  0                 19          31
+;       |..................|...........|  ; row#
     DB "                    ............" ; — 0
     DB "                    ............" ; .
     DB "                    ............" ; .
