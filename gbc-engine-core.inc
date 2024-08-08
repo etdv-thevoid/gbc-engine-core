@@ -1,5 +1,5 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION    EQUS "0.8.2"
+DEF GBC_ENGINE_CORE_VERSION    EQUS "0.8.4"
 
 ; REQUIRED RGBDS VERSION
 DEF REQUIRED_RGBDS_VERSION     EQUS "0.7.0"
@@ -1078,6 +1078,9 @@ _CrashHandler:
 
 .validCrashCode:
     ldh [hCrashCode], a     ; Save crash code
+
+    xor a, a
+    ldh [rNR52], a          ; Switch off sound
 
     call _ScreenOff         ; Turn off screen
 
