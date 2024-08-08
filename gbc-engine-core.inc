@@ -207,8 +207,8 @@ DS $0008 - @, $FF
 /*
 RST Vector for `jp hl` with additional error handling
 
-Crashes if attempting to jump to RAM. By default, called by the 
-the interrupt handler executor, `_FarCall`, and `_FarCallPreserve`
+Crashes if attempting to jump to RAM. Internally called by the 
+the interrupt handler executor, `_FarCall`, and `_FarCallPreserve`.
 */
 _CallHL::
     bit 7, h
@@ -365,11 +365,13 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0[$0068]
 
-; Sets Interrupt Handler
-;
-; Inputs:
-; - hl = dest handler
-; - bc = function pointer
+/*
+Sets Interrupt Handler
+
+Inputs:
+- hl = dest handler
+- bc = function pointer
+*/
 _SetInterruptHandler:
     ld [hl], c
     inc hl
@@ -388,10 +390,12 @@ _InterruptCommon:
     push af
    ; fallthrough
 
-; Execute Interrupt Handler
-;
-; Inputs:
-; - hl = interrupt handler HRAM variable
+/*
+Execute Interrupt Handler
+
+Inputs:
+- hl = interrupt handler HRAM variable
+*/
 _RunInterruptHandler:
     ld a, [hl+]
     ld h, [hl]
@@ -434,13 +438,15 @@ _ScreenOff::
    
     ret
 
-; Wait for b >= LY (Scanline)
-;
-; Inputs:
-; - b = LY to wait for
-;
-; Trashes:
-; - c
+/*
+Wait for b >= LY (Scanline)
+
+Inputs:
+- b = LY to wait for
+
+Trashes:
+- c
+*/
 _WaitForScanlineHigh::
     ld c, LOW(rLY)
 .wait:
@@ -449,13 +455,15 @@ _WaitForScanlineHigh::
     jr c, .wait
     ret
 
-; Wait for b < LY (Scanline)
-;
-; Inputs:
-; - b = LY to wait for
-;
-; Trashes:
-; - c
+/*
+Wait for b < LY (Scanline)
+
+Inputs:
+- b = LY to wait for
+
+Trashes:
+- c
+*/
 _WaitForScanlineLow::
     ld c, LOW(rLY)
 .wait:
@@ -494,16 +502,23 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Polls joypad register and sets appropriate HRAM variables
-;
-; Returns:
-; - `hKeysHeld`
-; - `hKeysPressed`
-; - `hKeysReleased`
-;
-; Trashes:
-; - af
-; - bc
+/*
+Polls joypad register and sets appropriate HRAM variables. If soft reset is enabled,
+a soft reset will be initialized if `Start + Select + A + B` are all held.
+
+Returns:
+- `hKeysHeld`
+- `hKeysPressed`
+- `hKeysReleased`
+
+Trashes:
+- af
+- bc
+
+See also:
+- `_EnableSoftReset`
+- `_DisableSoftReset`
+*/
 _ScanKeys::
     ld a, P1F_GET_DPAD
     call .getNibble         ; get DPAD nibble
@@ -605,6 +620,10 @@ _MagicStringCode:
     DS 4, $00
 .end:
 
+_HeaderCompatibilityCode:
+    DS 1, $00
+.end:
+
 DS $014C - @, $00
 
 _MagicStringVersion:
@@ -631,39 +650,37 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Verifies that `sp` is within the bounds of the stack and
-; causes a crash on stack detection of overflow.
-;
-; Trashes:
-; - af
-_CheckForStackOverflow::
-    push hl
+/*
+Verifies that `sp` is within the bounds of the stack and
+causes a crash on detection of overflow.
 
+Trashes:
+- af
+- hl
+*/
+_CheckForStackOverflow::
     ld hl, sp - STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
     ld a, h
     cp a, HIGH(wStackBottom)
     ld a, CRASH_STACK_OVERFLOW
     jp c, _CrashHandler
-
-    pop hl
     ret
 
-; Verifies that `sp` is within the bounds of the stack and
-; causes a crash on stack detection of underflow.
-;
-; Trashes:
-; - af
+/*
+Verifies that `sp` is within the bounds of the stack and
+causes a crash on detection of underflow.
+
+Trashes:
+- af
+- hl
+*/
 _CheckForStackUnderflow::
 IF (STACK_SIZE % $100 == 0)
-    push hl
-
     ld hl, sp + STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
     ld a, h
     cp a, HIGH(wStackTop) + 1
     ld a, CRASH_STACK_UNDERFLOW
     jp nc, _CrashHandler
-
-    pop hl
 ELSE
     WARN "STACK_SIZE must be a multiple of $100 bytes for effecient stack underflow checking"
 ENDC
@@ -733,7 +750,8 @@ SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Set GBC/GBA CPU Speed to DoubleSpeed
 _SetCPUFast::
-    call _IsGBColor
+    ldh a, [hIsGBColorFlag]
+    and a
     ret z
     ldh a, [rKEY1]
     and a, KEY1F_DBLSPEED
@@ -742,7 +760,8 @@ _SetCPUFast::
 
 ; Set GBA/GBC CPU to SingleSpeed
 _SetCPUSlow::
-    call _IsGBColor
+    ldh a, [hIsGBColorFlag]
+    and a
     ret z
     ldh a, [rKEY1]
     and a, KEY1F_DBLSPEED
@@ -1003,7 +1022,8 @@ _Reset:
     ld d, $00
     call _VideoMemSet       ; Clear VRAM bank 0
 
-    call _IsGBColor
+    ldh a, [hIsGBColorFlag]
+    and a
     jr z, .notColorEnabled
 
     ld a, 1
@@ -1024,11 +1044,12 @@ _Reset:
     call _InitOAM           ; With HRAM filled with $00, copy OAM Refresh function to HRAM
     call _RefreshOAM        ; With RAM filled with $00, this will clear also clear OAM
 
-    ld a, [_MagicStringCode.end]
+    ld a, [_HeaderCompatibilityCode]
     cp a, CART_COMPATIBLE_GBC
     jr nz, .done
 
-    call _IsGBColor
+    ldh a, [hIsGBColorFlag]
+    and a
     ld a, CRASH_HARDWARE
     jr z, _CrashHandler
 
@@ -1045,8 +1066,8 @@ The function can assume the following:
     call _Main              ; Real program starts here
 
     ld a, CRASH_RETURN_FROM_MAIN
-   ; Should never reach this point!
-   ; fallthrough to CrashHandler
+    ; Should never reach this point!
+    ; fallthrough to CrashHandler
 
 _CrashHandler:
     di
@@ -1125,7 +1146,8 @@ gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to
     ld de, vSCRN1.y16x1
     call _VideoMemCopyFast
 
-    call _IsGBColor
+    ldh a, [hIsGBColorFlag]
+    and a
     jr z, .notColorEnabled
 
     ld a, 1
@@ -1152,8 +1174,7 @@ gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to
     ldh [rLCDC], a
       
    ; During the first (blank) frame, initialize display registers
-    ld a, %11100100
-    call _SetDMGPalettes
+    call _SetDMGPalettesDefault
 
 .loop
     halt
@@ -1263,7 +1284,8 @@ SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 ; - bc = byte count
 ; - de = dest address
 _LoadFromSRAM::
-    call _EnableSRAM
+    ld a, CART_SRAM_ENABLE
+    ld [rRAMG], a
 
     push hl
     push de
@@ -1275,7 +1297,8 @@ _LoadFromSRAM::
 
     call _MemCopy
 
-    call _DisableSRAM
+    ld a, CART_SRAM_DISABLE
+    ld [rRAMG], a
     ret
 
 ; Save data to SRAM to address `hl`
@@ -1284,20 +1307,12 @@ _LoadFromSRAM::
 ; - bc = byte count
 ; - de = dest address
 _SaveToSRAM::
-    call _EnableSRAM
+    ld a, CART_SRAM_ENABLE
+    ld [rRAMG], a
 
     call _MemCopy
     call _SaveSRAMIntegrityData
 
-    call _DisableSRAM
-    ret
-
-_EnableSRAM:
-    ld a, CART_SRAM_ENABLE
-    ld [rRAMG], a
-    ret
-
-_DisableSRAM:
     ld a, CART_SRAM_DISABLE
     ld [rRAMG], a
     ret
@@ -1807,7 +1822,7 @@ _MemCopy::
     jr nz, _MemCopy
     ret
 
-; Safely copies bytes from one area of memory to VRAM.
+; Safely copies bytes from one area of memory to/from VRAM.
 ;
 ; Inputs:
 ; - a = VRAM bank
@@ -1831,7 +1846,8 @@ _VideoMemCopy::
 
 ; Copies bytes from one area of memory to another.
 ;
-; Used to copy .1bpp formated tile data
+; Note:
+; - For copying .1bpp formated graphics data
 ;
 ; Inputs:
 ; - hl = source address
@@ -1849,9 +1865,10 @@ _MemCopyMonochrome::
     jr nz, _MemCopyMonochrome
     ret
 
-; Safely copies bytes from one area of memory to VRAM.
+; Safely copies bytes from one area of memory to/from VRAM.
 ;
-; Used to copy .1bpp formated tile data
+; Note:
+; - For copying .1bpp formated graphics data
 ;
 ; Inputs:
 ; - a = VRAM bank
@@ -1889,7 +1906,7 @@ _MemCopyFast::
     jr nz, _MemCopyFast
     ret
 
-; Safely copies bytes from one small area (< 256 bytes) of memory to VRAM.
+; Safely copies bytes from one small area (< 256 bytes) of memory to/from VRAM.
 ;
 ; Inputs:
 ; - a = VRAM bank
@@ -1928,7 +1945,7 @@ _MemCopyInc::
     jr nz, _MemCopyInc
     ret
 
-; Safely copies bytes from one area of memory to VRAM while incrementally stepping.
+; Safely copies bytes from one area of memory to/from VRAM while incrementally stepping.
 ;
 ; Inputs:
 ; - a = VRAM bank
@@ -1990,7 +2007,7 @@ _MemCompare::
     and a, a
     ret
 
-; Safely compares bytes from one area of memory to VRAM.
+; Safely compares bytes from one area of memory to/from VRAM.
 ;
 ; Inputs:
 ; - a = VRAM bank
@@ -2055,7 +2072,7 @@ _GetBLK01TileAddress::
 _GetBLK21TileAddress::
     add a, OFFSET
     ld de, vBLK21
-    jr _GetTileAddress
+    ; fallthrough
 
 _GetTileAddress:
     ld h, $00
@@ -2092,13 +2109,13 @@ _SetSCRN0BackgroundTile::
 ; - de = base address ( `vSCRN1` )
 _SetSCRN1BackgroundTile::
     ld de, vSCRN1
-    jr _SetBackgroundTile
+    ; fallthrough
 
 _SetBackgroundTile:
     ld e, b     ; de = base + x
     ld h, $00
     ld l, c     ; hl = y
-REPT 5         ; 2^5 = 32
+REPT 5          ; 2^5 = 32
     add hl, hl  ; y * 32
 ENDR
     add hl, de  ; hl = (base + x) + (y * 32)
@@ -2180,13 +2197,25 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Sets DMG Palettes
+; Sets all Monochrome DMG Palettes to the default values
 ;
-; - a = `rBGP` palette
-; - a = `rOBP0` palette
-; - a ~ `rOBP1` palette
+; Trashes:
+; - bc
+_SetDMGPalettesDefault::
+    ld b, %11100100
+    ld c, %11100100
+    ; fallthrough
+
+; Sets all Monochrome DMG Palettes
+;
+; Inputs:
+; - b = `rBGP` palette
+; - c = `rOBP0` palette
+; - c ~ `rOBP1` palette
 _SetDMGPalettes::
+    ld a, b
     ldh [rBGP], a
+    ld a, c
     ldh [rOBP0], a
     cpl
     ldh [rOBP1], a
@@ -2200,7 +2229,7 @@ _SetBackgroundPaletteWhite::
 ; Sets all Background Palettes to full black
 _SetBackgroundPaletteBlack::
     ld hl,_BlackoutPalettes
-   ;fallthrough
+    ; fallthrough
 
 ; Sets all Background Palettes
 ;
@@ -2249,7 +2278,7 @@ _SetSpritePaletteWhite::
 ; Sets all Sprite Palettes to full black
 _SetSpritePaletteBlack::
     ld hl,_BlackoutPalettes
-   ;fallthrough
+    ; fallthrough
 
 ; Sets all Sprite Palettes
 ;
@@ -2341,13 +2370,13 @@ LOAD "GBC-ENGINE-CORE - OAM REFRESH", HRAM, ALIGN[4]
 ; Copy of OAM Refresh function for DMA transfer in HRAM
 hOAMRefreshFunction:
     ld a, HIGH(wShadowOAM)
-    ldh [rDMA], a  ; start DMA transfer (starts right after instruction)
-    ld a, 40       ; delay for a total of 4×40 = 160 M-cycles
+    ldh [rDMA], a   ; start DMA transfer (starts right after instruction)
+    ld a, 40        ; delay for a total of 4×40 = 160 M-cycles
 .delay:
-    dec a          ; 1 M-cycle
-    jr nz, .delay  ; 3 M-cycles
-    ret z          ; Conditional `ret` is 1 M-cycle slower, which avoids
-                  ; reading from the stack on the last M-cycle of DMA.
+    dec a           ; 1 M-cycle
+    jr nz, .delay   ; 3 M-cycles
+    ret z           ; Conditional `ret` is 1 M-cycle slower, which avoids
+                    ; reading from the stack on the last M-cycle of DMA.
 ENDL
 .end:
 
