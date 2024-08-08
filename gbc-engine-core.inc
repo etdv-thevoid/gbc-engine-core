@@ -2191,27 +2191,31 @@ ENDSECTION
 
 /*******************************************************************************
 **
-**  PALETTE FUNCTIONS
+**  MONOCHROME PALETTE FUNCTIONS
 **
 *******************************************************************************/
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Sets all Monochrome DMG Palettes to the default values
-;
-; Trashes:
-; - bc
+/*
+Sets all Monochrome DMG Palettes to the default values
+
+Trashes:
+- bc
+*/
 _SetDMGPalettesDefault::
     ld b, %11100100
     ld c, %11100100
     ; fallthrough
 
-; Sets all Monochrome DMG Palettes
-;
-; Inputs:
-; - b = `rBGP` palette
-; - c = `rOBP0` palette
-; - c ~ `rOBP1` palette
+/*
+Sets all Monochrome DMG Palettes
+
+Inputs:
+- b = `rBGP` palette
+- c = `rOBP0` palette
+- c ~ `rOBP1` palette
+*/
 _SetDMGPalettes::
     ld a, b
     ldh [rBGP], a
@@ -2220,6 +2224,17 @@ _SetDMGPalettes::
     cpl
     ldh [rOBP1], a
     ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  COLOR PALETTE FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Sets all Background Palettes to full white
 _SetBackgroundPaletteWhite::
