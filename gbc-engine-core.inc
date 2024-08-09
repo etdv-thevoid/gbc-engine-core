@@ -1,5 +1,5 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION    EQUS "1.0.0"
+DEF GBC_ENGINE_CORE_VERSION    EQUS "1.1.0"
 
 ; REQUIRED RGBDS VERSION
 DEF REQUIRED_RGBDS_VERSION     EQUS "0.7.0"
@@ -122,7 +122,35 @@ ENDM
 DEF TRUE    EQU 1
 DEF FALSE   EQU 0
 
-DEF BOOTUP_C_SGB EQU $14
+DEF ASSERT_MAIN EQUS #"""
+Function `_Main` should be in ROM0!
+gbc-engine-core hands off code execution to a function labeled `_Main` when done with initial setup.
+
+The function can assume the following:
+ - All ram areas are cleared
+ - LCD is off
+ - Interrupts are disabled
+"""
+
+DEF ASSERT_FONT_01 EQUS #"""
+Tileset `_FontTiles` should be in ROM0!
+gbc-engine-core requires a .1bpp set of font tiles in ASCII format for the crash screen.
+
+Format:
+
+ !"#$%&'()*+,-./
+0123456789:;<=>?
+@ABCDEFGHIJKLMNO
+PQRSTUVWXYZ[\]^_
+`abcdefghijklmno
+pqrstuvwxyz{|}~
+"""
+
+DEF ASSERT_FONT_02 EQUS #"""
+gbc-engine-core expects `_FontTiles` to have sublabel `.end:`, be formated as .1bpp, and be 96 tiles long.
+"""
+
+DEF BOOTUP_C_SGB            EQU $14
 
 RSRESET
 DEF CRASH_EXECUTING_FF      RB 1
@@ -133,28 +161,26 @@ DEF CRASH_STACK_OVERFLOW    RB 1
 DEF CRASH_STACK_UNDERFLOW   RB 1
 DEF CRASH_DIVIDE_BY_ZERO    RB 1
 DEF CRASH_HARDWARE          RB 1
-
 DEF NUMBER_OF_CRASH_CODES   RB 0
-
 DEF CRASH_UNKNOWN_ERROR     RB 1
 
-DEF CRASH_CODE_SIZE  EQU 4
-DEF CRASH_TEXT_SIZE  EQU 18
+DEF CRASH_CODE_SIZE         EQU 4
+DEF CRASH_TEXT_SIZE         EQU 18
 
-DEF VRAM_SIZE        EQU _SRAM - _VRAM
-DEF TILE_BLOCK_SIZE  EQU (VRAM_SIZE - (_SRAM - _SCRN0)) / 3
-DEF TILE_SIZE        EQU $10
-DEF OFFSET           EQU 128
+DEF VRAM_SIZE               EQU _SRAM - _VRAM
+DEF TILE_BLOCK_SIZE         EQU (VRAM_SIZE - (_SRAM - _SCRN0)) / 3
+DEF TILE_SIZE               EQU $10
+DEF OFFSET                  EQU 128
 
-DEF SRAM_SIZE        EQU _RAM - _SRAM
-DEF SRAM_BUFFER_SIZE EQU $100
+DEF SRAM_SIZE               EQU _RAM - _SRAM
+DEF SRAM_BUFFER_SIZE        EQU $100
 
-DEF RAM_SIZE         EQU (_RAMBANK - _RAM) * 2
-DEF STACK_SIZE       EQU $100
-DEF STACK_BUFFER     EQU $10
+DEF RAM_SIZE                EQU (_RAMBANK - _RAM) * 2
+DEF STACK_SIZE              EQU $100
+DEF STACK_BUFFER            EQU $10
 
-DEF HRAM_SIZE        EQU rIE - _HRAM
-DEF hTempStack       EQU rIE - 1
+DEF HRAM_SIZE               EQU rIE - _HRAM
+DEF hTempStack              EQU rIE - 1
 
 
 /*******************************************************************************
@@ -207,8 +233,14 @@ DS $0008 - @, $FF
 /*
 RST Vector for `jp hl` with additional error handling
 
-Crashes if attempting to jump to RAM. Internally called by the 
-the interrupt handler executor, `_FarCall`, and `_FarCallPreserve`.
+Crashes if attempting to jump to RAM.
+
+Internally called by
+- the custom interrupt handler
+- `_FarCall`
+- `_FarCallPreserve`
+- `_JumpTable`
+- `_JumpTableBank`
 */
 _CallHL::
     bit 7, h
@@ -790,11 +822,31 @@ ENDSECTION
 
 /*******************************************************************************
 **
-**  FARCALL FUNCTIONS
+**  BANK SWITCH & FARCALL FUNCTIONS
 **
 *******************************************************************************/
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Switches to bank `a`
+_BankSwitchNew::
+    ldh [hFarCallBank], a   ; Save destination bank
+
+    ldh a, [hCurrentBank]   ; Get current bank
+    push af                 ; Push current bank to stack
+
+    ldh a, [hFarCallBank]   ; Set destination bank
+    ldh [hCurrentBank], a
+    ld [rROMB0], a
+    ret
+
+; Returns to previous bank
+_BankSwitchPrevious::
+    pop af                  ; Pop current bank from stack and reset
+    ldh [hCurrentBank], a
+    ld [rROMB0], a
+
+    ret
 
 ; Calls function `hl` in bank `a` by switching rom banks
 ; - a = bank where function is located
@@ -839,80 +891,6 @@ ENDSECTION
 
 /*******************************************************************************
 **
-**  JUMP TABLE FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-; Loads jump table from address in `hl` and jumps to address number a
-;
-; Inputs:
-; - a = jump table entry
-; - hl = jump table address
-;
-; Trashes:
-; - de
-;
-; Jump Table Format:
-;```
-;_ExampleJumpTable:
-;     DW _Address1
-;     DW _Address2
-;     DW _Address3
-;     DW _NULL
-;```
-_JumpTable::
-    ld d, 0
-    ld e, a
-    add hl, de
-    add hl, de
-    ld a, [hl+]
-    ld h, [hl]
-    ld l, a
-    rst _CallHL
-    ret
-
-; Loads jump table (with banks) from address in `hl` and jumps to address number a
-;
-; Inputs:
-; - a = jump table entry
-; - hl = jump table address
-;
-; Trashes:
-; - de
-;
-; Jump Table Format:
-;```
-;_ExampleJumpTable:
-;     DB BANK(_Address1)
-;     DW _Address1
-;     DB BANK(_Address2)
-;     DW _Address2
-;     DB BANK(_Address3)
-;     DW _Address3
-;     DB BANK(_NULL)
-;     DW _NULL
-;```
-_JumpTableBank::
-    ld d, 0
-    ld e, a
-    add hl, de
-    add hl, de
-    add hl, de
-    ld a, [hl+]
-    ld d, a
-    ld a, [hl+]
-    ld h, [hl]
-    ld l, a
-    ld a, d
-    jp _FarCall
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
 **  PADDING
 **
 *******************************************************************************/
@@ -938,7 +916,7 @@ SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 ; - a = Monochrome vs Color
 ; - b = Color vs Advance
 ; - c = Super Game Boy
-; - d = 
+; - d = CGB/AGB in MGB compat. mode
 ;
 _Start:
     ld e, a                 ; Backup a into e (non-important startup register)
@@ -1054,15 +1032,7 @@ _Reset:
     jr z, _CrashHandler
 
 .done:
-ASSERT BANK(_Main) == 0, #"""
-Function `_Main` should be in ROM0!
-gbc-engine-core hands off code execution to a function labeled `_Main` when done with initial setup.
-
-The function can assume the following:
- - All ram areas are cleared
- - LCD is off
- - Interrupts are disabled
-"""
+ASSERT FATAL, BANK(_Main) == 0, "{s:ASSERT_MAIN}"
     call _Main              ; Real program starts here
 
     ld a, CRASH_RETURN_FROM_MAIN
@@ -1090,63 +1060,61 @@ _CrashHandler:
     ld d, $00
     call _VideoMemSet       ; Clear VRAM bank 0
 
-ASSERT BANK(_FontTiles) == 0, #"""
-Tileset `_FontTiles` should be in ROM0!
-gbc-engine-core requires a .1bpp set of font tiles in ASCII format FOR the crash screen.
-
-Format:
-
- !"#$%&'()*+,-./
-0123456789:;<=>?
-@ABCDEFGHIJKLMNO
-PQRSTUVWXYZ[\]^_
-`abcdefghijklmno
-pqrstuvwxyz{|}~
-"""
-ASSERT ((_FontTiles.end - _FontTiles) * 2) == (vBLK01.128 - vBLK01.32), #"""
-gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to be formated as .1bpp
-"""
+ASSERT FATAL, BANK(_FontTiles) == 0, "{s:ASSERT_FONT_01}"
+ASSERT FATAL, ((_FontTiles.end - _FontTiles) * 2) == (vBLK21.end - vBLK21.32), "{s:ASSERT_FONT_02}"
     xor a
     ld hl, _FontTiles
     ld bc, (_FontTiles.end - _FontTiles)
-    ld de, vBLK01.32
+    ld de, vBLK21.32
     call _VideoMemCopyMonochrome
 
     xor a
     ld hl, _CrashTextTileMap
     ld bc, (_CrashTextTileMap.end - _CrashTextTileMap)
-    ld de, vSCRN1
+    ld de, vSCRN0
     call _VideoMemCopy
 
     xor a
     ld hl, _MagicStringTitle
     ld b, (_MagicStringCode.end - _MagicStringTitle)
-    ld de, vSCRN1.y1x2
+    ld de, vSCRN0.y1x2
     call _VideoMemCopyFast
 
     ld hl, _MagicStringVersion
     ld a, [hl]
     add "0"
     ld d, a
-    ld hl, vSCRN1.y1x17
+    ld hl, vSCRN0.y1x17
     ld b, 1
     xor a
     call _VideoMemSetFast
 
-    call _GetCrashCode
+    ldh a, [hCrashCode]
+    ld b, CRASH_CODE_SIZE
+    ld c, (NUMBER_OF_CRASH_CODES + 1)
+    ld hl, _CrashCodes
+    call _DataTable
+
     xor a
-    ld de, vSCRN1.y11x13
+    ld b, CRASH_CODE_SIZE
+    ld de, vSCRN0.y11x13
     call _VideoMemCopyFast
 
-    call _GetCrashText
-    ld de, vSCRN1.y13x1
+    ldh a, [hCrashCode]
+    ld b, CRASH_TEXT_SIZE
+    ld c, (NUMBER_OF_CRASH_CODES + 1)
+    ld hl, _CrashText
+    call _DataTable
+    
     xor a
+    ld b, CRASH_TEXT_SIZE
+    ld de, vSCRN0.y13x1
     call _VideoMemCopyFast
 
     xor a
     ld hl, _BuildDate + 2
     ld b, (_BuildDate.end - (_BuildDate + 2))
-    ld de, vSCRN1.y16x1
+    ld de, vSCRN0.y16x1
     call _VideoMemCopyFast
 
     ldh a, [hIsGBColorFlag]
@@ -1167,34 +1135,19 @@ gbc-engine-core expects `_FontTiles` to have `.end`, to be 96 tiles long, and to
     call _SetBackgroundPalette
 
 .notColorEnabled:
-   ; Reset scroll registers
     xor a
     ldh [rSCY], a
     ldh [rSCX], a
 
-   ; Turn on LCD
-    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BG9C00 | LCDCF_BGON
+    ld a, LCDCF_ON | LCDCF_BGON
     ldh [rLCDC], a
-      
-   ; During the first (blank) frame, initialize display registers
+
     call _SetDMGPalettesDefault
 
 .loop
     halt
     nop
     jr .loop
-    ret
-
-_GetCrashCode:
-    ldh a, [hCrashCode]
-    ld de, _CrashCodes
-    ld h, $00
-    ld l, a
-REPT 2         ; 2^2 = 4
-    add hl, hl ; index * 4
-ENDR
-    add hl, de
-    ld b, CRASH_CODE_SIZE
     ret
 
 _CrashCodes:
@@ -1208,34 +1161,22 @@ _CrashCodes:
     DB "{04X:CRASH_HARDWARE}"
     DB "00FF"
 .end:
-    ASSERT (_CrashCodes.end - _CrashCodes) == ((NUMBER_OF_CRASH_CODES + 1) * CRASH_CODE_SIZE)
-
-_GetCrashText:
-    ldh a, [hCrashCode]
-    ld de, _CrashText
-    ld h, $00
-    ld l, a
-REPT 5         ; 2^5 = 32
-    add hl, hl ; index * 32
-ENDR
-    add hl, de
-    ld b, CRASH_TEXT_SIZE
-    ret
+ASSERT (_CrashCodes.end - _CrashCodes) == ((NUMBER_OF_CRASH_CODES + 1) * CRASH_CODE_SIZE)
 
 _CrashText:
-; col#  0                 19          31
-;       |..................|...........|
-    DB "Executing $FF                   "
-    DB "NULL pointer                    "
-    DB "Executing RAM                   "
-    DB "Return from Main                "
-    DB "Stack overflow                  "
-    DB "Stack underflow                 "
-    DB "Divide by zero                  "
-    DB "GBC-only cartridge              "
-    DB "Unknown error                   "
+; col# 0                  19
+;      |..................|
+    DB "Executing $FF     "
+    DB "NULL pointer      "
+    DB "Executing RAM     "
+    DB "Return from Main  "
+    DB "Stack overflow    "
+    DB "Stack underflow   "
+    DB "Divide by zero    "
+    DB "GBC-only cartridge"
+    DB "Unknown error     "
 .end:
-    ASSERT (_CrashText.end - _CrashText) == ((NUMBER_OF_CRASH_CODES + 1) * 32)
+ASSERT (_CrashText.end - _CrashText) == ((NUMBER_OF_CRASH_CODES + 1) * CRASH_TEXT_SIZE)
 
 _CrashTextTileMap:
 ; col#  0                 19          31
@@ -1258,9 +1199,9 @@ _CrashTextTileMap:
     DB " Build Date:        ............" ; .
     DB "                    ............" ; .
     DB "                    ............" ; — 17
-REPT 14                                  ; .
+REPT 14                                   ; .
     DB "................................" ; .
-ENDR                                     ; — 31
+ENDR                                      ; — 31
 .end:
 
 _CrashPalette:
@@ -1269,6 +1210,219 @@ _CrashPalette:
     DW (00 << 0) + (00 << 5) + (15 << 10)
     DW (31 << 0) + (31 << 5) + (31 << 10)
 .end:
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  TABLE FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+/*
+Loads pointer table from address in `hl` and returns address number `a`.
+
+Crashes if `a` is greater than or equal to table entry count `c`.
+
+Inputs:
+- a = pointer table entry
+- c = number of table entries
+- hl = pointer table address
+
+Returns:
+- hl = pointer number `a`
+
+Trashes:
+- de
+
+Pointer Table Format:
+```
+ExamplePointerTable:
+    DW _Address1
+    DW _Address2
+    DW _Address3
+    DW _NULL
+```
+*/
+_PointerTable::
+    cp a, c
+    jp nc, _NULL
+    ld d, 0
+    ld e, a
+    add hl, de
+    add hl, de
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+    ret
+
+/*
+Loads jump table from address in `hl` and jumps to address number `a`.
+
+Crashes if `a` is greater than or equal to table entry count `c`.
+
+Inputs:
+- a = jump table entry
+- c = number of table entries
+- hl = jump table address
+
+Trashes:
+- de
+
+Jump Table Format:
+
+```
+ExampleJumpTable:
+    DW _Address1
+    DW _Address2
+    DW _Address3
+    DW _NULL
+```
+*/
+_JumpTable::
+    cp a, c
+    jp nc, _NULL
+    ld d, 0
+    ld e, a
+    add hl, de
+    add hl, de
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+    rst _CallHL
+    ret
+
+/*
+Loads pointer table (with banks) from address in `hl` and returns address number `a`.
+
+Crashes if `a` is greater than or equal to table entry count `c`.
+
+Inputs:
+- a = pointer table entry
+- c = number of table entries
+- hl = pointer table address
+
+Returns:
+- a = bank of pointer
+- hl = pointer number `a`
+
+Trashes:
+- de
+
+Pointer Table Format:
+```
+_ExamplePointerTable:
+    DB BANK(_Address1)
+    DW _Address1
+    DB BANK(_Address2)
+    DW _Address2
+    DB BANK(_Address3)
+    DW _Address3
+    DB BANK(_NULL)
+    DW _NULL
+```
+*/
+_PointerTableBank::
+    cp a, c
+    jp nc, _NULL
+    ld d, 0
+    ld e, a
+    add hl, de
+    add hl, de
+    add hl, de
+    ld a, [hl+]
+    ld d, a
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+    ld a, d
+    ret
+
+/*
+Loads jump table (with banks) from address in `hl` and jumps to address number `a`.
+
+Crashes if `a` is greater than or equal to table entry count `c`.
+
+Inputs:
+- a = jump table entry
+- c = number of table entries
+- hl = jump table address
+
+Trashes:
+- de
+
+Jump Table Format:
+
+```
+ExampleJumpTable:
+    DB BANK(_Address1)
+    DW _Address1
+    DB BANK(_Address2)
+    DW _Address2
+    DB BANK(_Address3)
+    DW _Address3
+    DB BANK(_NULL)
+    DW _NULL
+```
+*/
+_JumpTableBank::
+    cp a, c
+    jp nc, _NULL
+    ld d, 0
+    ld e, a
+    add hl, de
+    add hl, de
+    add hl, de
+    ld a, [hl+]
+    ld d, a
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+    ld a, d
+    jp _FarCall
+
+/*
+Loads pointer to entry `a` in data table at address `hl` that is
+`b` bytes in width and returns new pointer in `hl`.
+
+Crashes if `a` is greater than or equal to table entry count `c`.
+
+Inputs:
+- a = data table entry
+- b = table byte width
+- c = number of table entries
+- hl = data table address
+
+Returns:
+- hl = pointer to data entry
+
+Trashes:
+- de
+
+Data Table Format:
+```
+ExampleDataTable:
+    DB "Example Data 1"
+    DB "Example Data 2"
+    DB "Example Data 3"
+    DW _NULL
+```
+*/
+_DataTable::
+    cp a, c
+    jp nc, _NULL
+    ld d, 0
+    ld e, a
+
+.loop:
+    add hl, de
+    dec b
+    jr nz, .loop
+
+    ret
 
 ENDSECTION
 
@@ -1485,7 +1639,7 @@ _Multiply::
 REPT 7 ; bits 7-1
     jr nc, :+      ; 3/2
     add hl, bc     ; 2
-:  add hl, hl     ; 2   = 5/6 cycles
+:   add hl, hl     ; 2   = 5/6 cycles
 ENDR   ; bit 0
     ret nc         ; 5/2
     add hl, bc     ; 2
@@ -2408,27 +2562,29 @@ ENDSECTION
 *******************************************************************************/
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-/*
-Initializes the sound driver with a default triangle waveform pattern
-*/
-_InitSound::
-    ld hl, _TriangleWaveform
-    ; fallthrough
     
 /*
-Initializes the sound driver with custom 16-byte waveform data for ch3
+Initializes the sound driver
 
 Input:
-- hl = source address of initial ch3 waveform
+- a = total number of sounds in Sound Pointer Table
+- bc = address of Sound Pointer Table
 */
-_InitSoundCustomWaveform::
+_InitSound::
+    ldh [hSoundTotalNumber], a
+
     ld a, AUDENA_OFF    ; Turn master audio OFF
     ldh [rNR52], a
 
     ld a, TACF_STOP     ; Turn Timer OFF
     ldh [rTAC], a
 
+    ld hl, hSoundPointerTableAddress
+    ld [hl], c
+    inc hl
+    ld [hl], b          ; Save address of Sound table
+
+    ld hl, _TriangleWaveform
     ld b, $10           ; Copy waveform to WaveRAM
     ld de, _AUD3WAVERAM
     call _MemCopyFast
@@ -2473,38 +2629,23 @@ ASSERT (_TriangleWaveform.end - _TriangleWaveform) == $10
 Plays a new sound
 
 Inputs:
-    - a = Sound entry number from `_SoundDataTable`
+    - a = Sound number from the Sound Pointer Table defined on `_InitSound`
 */
 _PlaySound::
-    ASSERT BANK(_SoundDataTable) == 0, #"""
-Function `_SoundDataTable` should be in ROM0!
-`gbc-engine-core.inc` requires a lookup table of addresses to sound data to play sounds!
-
-```
-_SoundDataTable:
-    DW _SfxExample1
-    DW _SfxExample2
-    DW _SfxExample3
-    DW _SfxExample4
-    DW $0000
-```
-"""
     ldh [hSoundType], a
 
     ldh a, [hSoundInitialized]
     or a
     ret z
 
-    ldh a, [hSoundType]
-    ld hl, _SoundDataTable
-    
-    sla a
-    ld c, a
-    ld b, 0
-    add hl, bc
+    ld hl, hSoundPointerTableAddress
     ld a, [hl+]
     ld h, [hl]
     ld l, a
+    ldh a, [hSoundTotalNumber]
+    ld c, a
+    ldh a, [hSoundType]
+    call _PointerTable
 
     ld a, [hl+]
 
@@ -2520,11 +2661,15 @@ _SoundDataTable:
     ret
 
 _PlayCh1:
-    ldh a, [hSoundType]
-    ldh [hSoundCh1Type], a
-    
     ld a, [hl+]
     ldh [hSoundCh1Length], a
+
+    ld de, hSoundCh1DataTableAddress
+    ld a, l
+    ld [de], a
+    inc de
+    ld a, h
+    ld [de], a
 
     xor a
     ldh [hSoundCh1Count], a
@@ -2533,11 +2678,15 @@ _PlayCh1:
     jr _PlayEnable
 
 _PlayCh2:
-    ldh a, [hSoundType]
-    ldh [hSoundCh2Type], a
-    
     ld a, [hl+]
     ldh [hSoundCh2Length], a
+
+    ld de, hSoundCh2DataTableAddress
+    ld a, l
+    ld [de], a
+    inc de
+    ld a, h
+    ld [de], a
 
     xor a
     ldh [hSoundCh2Count], a
@@ -2546,11 +2695,15 @@ _PlayCh2:
     jr _PlayEnable
 
 _PlayCh3:
-    ldh a, [hSoundType]
-    ldh [hSoundCh3Type], a
-    
     ld a, [hl+]
     ldh [hSoundCh3Length], a
+
+    ld de, hSoundCh3DataTableAddress
+    ld a, l
+    ld [de], a
+    inc de
+    ld a, h
+    ld [de], a
     
     xor a
     ldh [hSoundCh3Count], a
@@ -2559,11 +2712,15 @@ _PlayCh3:
     jr _PlayEnable
 
 _PlayCh4:
-    ldh a, [hSoundType]
-    ldh [hSoundCh4Type], a
-    
     ld a, [hl+]
     ldh [hSoundCh4Length], a
+
+    ld de, hSoundCh4DataTableAddress
+    ld a, l
+    ld [de], a
+    inc de
+    ld a, h
+    ld [de], a
 
     xor a
     ldh [hSoundCh4Count], a
@@ -2598,46 +2755,31 @@ _UpdateCh1:
 
 .update:
     ldh a, [hSoundCh1Length]
-    or a
-    jr z, _UpdateCh2
-
-    ld hl, _SoundDataTable
-    ldh a, [hSoundCh1Type]
-    
-    sla a
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh1Count]
+    cp a, c
+    jr nc, _UpdateCh2
+
+    ld hl, hSoundCh1DataTableAddress
     ld a, [hl+]
     ld h, [hl]
     ld l, a
 
-    inc hl
-    inc hl
-
-    ldh a, [hSoundCh1Count]
-    
-    sla a
-    sla a
-    sla a
+    ldh a, [hSoundCh1Length]
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh1Count]
+    ld b, $08
+    call _DataTable
 
     ld a, [hl+]
     ldh [hSoundCh1Duration], a
 
-    ld bc, rNR10
-REPT 5
-    ld a, [hl+]
-    ld [bc], a
-    inc bc
-ENDR
+    ld b, 5
+    ld de, rNR10
+    call _MemCopyFast
 
-    ld hl,hSoundCh1Count
+    ld hl, hSoundCh1Count
     inc [hl]
-    ld hl,hSoundCh1Length
-    dec [hl]
 
     ; fallthrough
 
@@ -2652,46 +2794,31 @@ _UpdateCh2:
 
 .update:
     ldh a, [hSoundCh2Length]
-    or a
-    jr z, _UpdateCh3
-
-    ld hl, _SoundDataTable
-    ldh a, [hSoundCh2Type]
-    
-    sla a
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh2Count]
+    cp a, c
+    jr nc, _UpdateCh3
+
+    ld hl, hSoundCh2DataTableAddress
     ld a, [hl+]
     ld h, [hl]
     ld l, a
 
-    inc hl
-    inc hl
-
-    ldh a, [hSoundCh2Count]
-    
-    sla a
-    sla a
-    sla a
+    ldh a, [hSoundCh2Length]
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh2Count]
+    ld b, $08
+    call _DataTable
 
     ld a, [hl+]
     ldh [hSoundCh2Duration], a
 
-    ld bc, rNR21
-REPT 4
-    ld a, [hl+]
-    ld [bc], a
-    inc bc
-ENDR
+    ld b, 4
+    ld de, rNR21
+    call _MemCopyFast
 
-    ld hl,hSoundCh2Count
+    ld hl, hSoundCh2Count
     inc [hl]
-    ld hl,hSoundCh2Length
-    dec [hl]
 
     ; fallthrough
 
@@ -2706,46 +2833,31 @@ _UpdateCh3:
 
 .update:
     ldh a, [hSoundCh3Length]
-    or a
-    jr z, _UpdateCh4
-
-    ld hl, _SoundDataTable
-    ldh a, [hSoundCh3Type]
-    
-    sla a
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh3Count]
+    cp a, c
+    jr nc, _UpdateCh4
+
+    ld hl, hSoundCh3DataTableAddress
     ld a, [hl+]
     ld h, [hl]
     ld l, a
 
-    inc hl
-    inc hl
-
-    ldh a, [hSoundCh3Count]
-    
-    sla a
-    sla a
-    sla a
+    ldh a, [hSoundCh3Length]
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh3Count]
+    ld b, $08
+    call _DataTable
 
     ld a, [hl+]
     ldh [hSoundCh3Duration], a
 
-    ld bc, rNR30
-REPT 5
-    ld a, [hl+]
-    ld [bc], a
-    inc bc
-ENDR
+    ld b, 5
+    ld de, rNR30
+    call _MemCopyFast
 
-    ld hl,hSoundCh3Count
+    ld hl, hSoundCh3Count
     inc [hl]
-    ld hl,hSoundCh3Length
-    dec [hl]
 
     ; fallthrough
 
@@ -2760,65 +2872,58 @@ _UpdateCh4:
 
 .update:
     ldh a, [hSoundCh4Length]
-    or a
-    jr z, _UpdateDisable
-
-    ld hl, _SoundDataTable
-    ldh a, [hSoundCh4Type]
-    
-    sla a
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh4Count]
+    cp a, c
+    jr nc, _UpdateDisable
+
+    ld hl, hSoundCh4DataTableAddress
     ld a, [hl+]
     ld h, [hl]
     ld l, a
 
-    inc hl
-    inc hl
-
-    ldh a, [hSoundCh4Count]
-    
-    sla a
-    sla a
-    sla a
+    ldh a, [hSoundCh4Length]
     ld c, a
-    ld b, 0
-    add hl, bc
+    ldh a, [hSoundCh4Count]
+    ld b, $08
+    call _DataTable
 
     ld a, [hl+]
     ldh [hSoundCh4Duration], a
 
-    ld bc, rNR41
-REPT 4
-    ld a, [hl+]
-    ld [bc], a
-    inc bc
-ENDR
+    ld b, 4
+    ld de, rNR41
+    call _MemCopyFast
 
-    ld hl,hSoundCh4Count
+    ld hl, hSoundCh4Count
     inc [hl]
-    ld hl,hSoundCh4Length
-    dec [hl]
 
     ; fallthrough
 
 _UpdateDisable:
     ldh a, [hSoundCh1Length]
-    or a
-    ret nz
+    ld c, a
+    ldh a, [hSoundCh1Count]
+    cp a, c
+    ret c
     
     ldh a, [hSoundCh2Length]
-    or a
-    ret nz
+    ld c, a
+    ldh a, [hSoundCh2Count]
+    cp a, c
+    ret c
     
     ldh a, [hSoundCh3Length]
-    or a
-    ret nz
+    ld c, a
+    ldh a, [hSoundCh3Count]
+    cp a, c
+    ret c
     
     ldh a, [hSoundCh4Length]
-    or a
-    ret nz
+    ld c, a
+    ldh a, [hSoundCh4Count]
+    cp a, c
+    ret c
     
     ldh a, [rIE]
     and a, (~IEF_TIMER & $FF)
@@ -2845,26 +2950,34 @@ _WaitSound::
 
 _WaitCh1:
     ldh a, [hSoundCh1Length]
-    or a
-    jr nz, _WaitCh1
+    ld c, a
+    ldh a, [hSoundCh1Count]
+    cp a, c
+    jr c, _WaitCh1
     ; fallthrough
 
 _WaitCh2:
     ldh a, [hSoundCh2Length]
-    or a
-    jr nz, _WaitCh2
+    ld c, a
+    ldh a, [hSoundCh2Count]
+    cp a, c
+    jr c, _WaitCh2
     ; fallthrough
 
 _WaitCh3:
     ldh a, [hSoundCh3Length]
-    or a
-    jr nz, _WaitCh3
+    ld c, a
+    ldh a, [hSoundCh3Count]
+    cp a, c
+    jr c, _WaitCh3
     ; fallthrough
 
 _WaitCh4:
     ldh a, [hSoundCh4Length]
-    or a
-    jr nz, _WaitCh4
+    ld c, a
+    ldh a, [hSoundCh4Count]
+    cp a, c
+    jr c, _WaitCh4
     ; fallthrough
 
 _WaitReturn:
@@ -3153,11 +3266,17 @@ hFarCallBank:
 hSoundInitialized:
     DS 1
 
+hSoundPointerTableAddress:
+    DS 2
+
+hSoundTotalNumber:
+    DS 1
+
 hSoundType:
     DS 1
 
-hSoundCh1Type:
-    DS 1
+hSoundCh1DataTableAddress:
+    DS 2
 
 hSoundCh1Length:
     DS 1
@@ -3168,8 +3287,8 @@ hSoundCh1Count:
 hSoundCh1Duration:
     DS 1
 
-hSoundCh2Type:
-    DS 1
+hSoundCh2DataTableAddress:
+    DS 2
 
 hSoundCh2Length:
     DS 1
@@ -3180,8 +3299,8 @@ hSoundCh2Count:
 hSoundCh2Duration:
     DS 1
 
-hSoundCh3Type:
-    DS 1
+hSoundCh3DataTableAddress:
+    DS 2
 
 hSoundCh3Length:
     DS 1
@@ -3192,8 +3311,8 @@ hSoundCh3Count:
 hSoundCh3Duration:
     DS 1
 
-hSoundCh4Type:
-    DS 1
+hSoundCh4DataTableAddress:
+    DS 2
 
 hSoundCh4Length:
     DS 1
@@ -3223,6 +3342,7 @@ PURGE check_rgbds_version, create_gb_engine_core_charmap
 *******************************************************************************/
 
 PURGE REQUIRED_RGBDS_VERSION, REQUIRED_HARDWARE_VERSION, \
+      ASSERT_MAIN, ASSERT_FONT_01, ASSERT_FONT_02, \
       BOOTUP_C_SGB, \
       CRASH_CODE_SIZE, CRASH_TEXT_SIZE, \
       VRAM_SIZE, TILE_BLOCK_SIZE, TILE_SIZE, OFFSET, \
