@@ -54,3 +54,4 @@ jobs:
       - name: "Compile"
         run: |
           rgbasm gbc-engine-core.inc -P ./hardware/hardware.inc -o gbc-engine-core.obj
+          rgbasm gbc-engine-core-macros.inc -P ./hardware/hardware.inc -o gbc-engine-core-macros.obj

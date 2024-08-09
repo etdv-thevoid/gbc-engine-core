@@ -1,5 +1,5 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION    EQUS "0.8.4"
+DEF GBC_ENGINE_CORE_VERSION    EQUS "1.0.0"
 
 ; REQUIRED RGBDS VERSION
 DEF REQUIRED_RGBDS_VERSION     EQUS "0.7.0"
@@ -2402,6 +2402,480 @@ ENDSECTION
 
 
 /*******************************************************************************
+**                                                                            **
+**      SOUND FUNCTIONS                                                       **
+**                                                                            **
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+/*
+Initializes the sound driver with a default triangle waveform pattern
+*/
+_InitSound::
+    ld hl, _TriangleWaveform
+    ; fallthrough
+    
+/*
+Initializes the sound driver with custom 16-byte waveform data for ch3
+
+Input:
+- hl = source address of initial ch3 waveform
+*/
+_InitSoundCustomWaveform::
+    di                  ; Disable interrupts
+
+    ld a, AUDENA_OFF    ; Turn master audio OFF
+    ldh [rNR52], a
+
+    ld a, TACF_STOP     ; Turn Timer OFF
+    ldh [rTAC], a
+
+    ld b, $10           ; Copy waveform to WaveRAM
+    ld de, _AUD3WAVERAM
+    call _MemCopyFast
+    
+    ldh a, [rIE]        ; Disable Timer interrupt
+    and a, (~IEF_TIMER & $FF)
+    ldh [rIE], a
+
+    ldh a, [rIF]        ; Clear Timer interrupt flag
+    and a, (~IEF_TIMER & $FF)
+    ldh [rIF], a
+
+    xor a               ; Start Timer with a 64 Hz trigger
+    ldh [rTIMA], a
+    ld a, $C0
+    ldh [rTMA], a
+    ld a, TACF_START|TACF_4KHZ
+    ldh [rTAC], a
+
+    ld a, AUDENA_ON     ; Turn master audio ON
+    ldh [rNR52], a
+
+    ld a, $77           ; Enable max mixer volume for L / R
+    ldh [rNR50], a
+
+    ld a, $FF           ; Enable all channels L / all channels R
+    ldh [rNR51], a
+
+    ld a, $01           ; Flag sound as initialized
+    ldh [hSoundInitialized], a
+
+    reti                ; Enable interrupts
+
+_TriangleWaveform:
+    DB $01, $23, $45, $67, $89, $AB, $CD, $EF
+    DB $FE, $DC, $BA, $98, $76, $54, $32, $10
+.end:
+
+ASSERT (_TriangleWaveform.end - _TriangleWaveform) == $10
+
+/*
+Plays a new sound
+
+Inputs:
+    - a = Sound entry number from `_SoundDataTable`
+*/
+_PlaySound::
+    ASSERT BANK(_SoundDataTable) == 0, #"""
+Function `_SoundDataTable` should be in ROM0!
+`gbc-engine-core.inc` requires a lookup table of addresses to sound data to play sounds!
+
+```
+_SoundDataTable:
+    DW _SfxExample1
+    DW _SfxExample2
+    DW _SfxExample3
+    DW _SfxExample4
+    DW $0000
+```
+"""
+    ldh [hSoundType], a
+
+    ldh a, [hSoundInitialized]
+    or a
+    ret z
+
+    ldh a, [hSoundType]
+    ld hl, _SoundDataTable
+    
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+
+    ld a, [hl+]
+
+    cp $C1
+    jr z, _PlayCh1
+    cp $C2
+    jr z, _PlayCh2
+    cp $C3
+    jr z, _PlayCh3
+    cp $C4
+    jr z, _PlayCh4
+
+    ret
+
+_PlayCh1:
+    ldh a, [hSoundType]
+    ldh [hSoundCh1Type], a
+    
+    ld a, [hl+]
+    ldh [hSoundCh1Length], a
+
+    xor a
+    ldh [hSoundCh1Count], a
+    ldh [hSoundCh1Duration], a
+    
+    jr _PlayEnable
+
+_PlayCh2:
+    ldh a, [hSoundType]
+    ldh [hSoundCh2Type], a
+    
+    ld a, [hl+]
+    ldh [hSoundCh2Length], a
+
+    xor a
+    ldh [hSoundCh2Count], a
+    ldh [hSoundCh2Duration], a
+    
+    jr _PlayEnable
+
+_PlayCh3:
+    ldh a, [hSoundType]
+    ldh [hSoundCh3Type], a
+    
+    ld a, [hl+]
+    ldh [hSoundCh3Length], a
+    
+    xor a
+    ldh [hSoundCh3Count], a
+    ldh [hSoundCh3Duration], a
+    
+    jr _PlayEnable
+
+_PlayCh4:
+    ldh a, [hSoundType]
+    ldh [hSoundCh4Type], a
+    
+    ld a, [hl+]
+    ldh [hSoundCh4Length], a
+
+    xor a
+    ldh [hSoundCh4Count], a
+    ldh [hSoundCh4Duration], a
+    
+    ; fallthrough
+
+_PlayEnable:
+    ldh a, [rIE]    ; Enable Timer interrupt
+    or a, IEF_TIMER
+    ldh [rIE], a
+
+    ret
+
+/*
+Updates the sound driver
+*/
+_UpdateSound::
+    ldh a, [hSoundInitialized]
+    or a
+    ret z
+    ; fallthrough
+
+_UpdateCh1:
+    ldh a, [hSoundCh1Duration]
+    or a
+    jr z, .update
+
+    dec a
+    ldh [hSoundCh1Duration], a
+    jr _UpdateCh2
+
+.update:
+    ldh a, [hSoundCh1Length]
+    or a
+    jr z, _UpdateCh2
+
+    ld hl, _SoundDataTable
+    ldh a, [hSoundCh1Type]
+    
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+
+    inc hl
+    inc hl
+
+    ldh a, [hSoundCh1Count]
+    
+    sla a
+    sla a
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+
+    ld a, [hl+]
+    ldh [hSoundCh1Duration], a
+
+    ld bc, rNR10
+REPT 5
+    ld a, [hl+]
+    ld [bc], a
+    inc bc
+ENDR
+
+    ld hl,hSoundCh1Count
+    inc [hl]
+    ld hl,hSoundCh1Length
+    dec [hl]
+
+    ; fallthrough
+
+_UpdateCh2:
+    ldh a, [hSoundCh2Duration]
+    or a
+    jr z, .update
+
+    dec a
+    ldh [hSoundCh2Duration], a
+    jr _UpdateCh3
+
+.update:
+    ldh a, [hSoundCh2Length]
+    or a
+    jr z, _UpdateCh3
+
+    ld hl, _SoundDataTable
+    ldh a, [hSoundCh2Type]
+    
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+
+    inc hl
+    inc hl
+
+    ldh a, [hSoundCh2Count]
+    
+    sla a
+    sla a
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+
+    ld a, [hl+]
+    ldh [hSoundCh2Duration], a
+
+    ld bc, rNR21
+REPT 4
+    ld a, [hl+]
+    ld [bc], a
+    inc bc
+ENDR
+
+    ld hl,hSoundCh2Count
+    inc [hl]
+    ld hl,hSoundCh2Length
+    dec [hl]
+
+    ; fallthrough
+
+_UpdateCh3:
+    ldh a, [hSoundCh3Duration]
+    or a
+    jr z, .update
+
+    dec a
+    ldh [hSoundCh3Duration], a
+    jr _UpdateCh4
+
+.update:
+    ldh a, [hSoundCh3Length]
+    or a
+    jr z, _UpdateCh4
+
+    ld hl, _SoundDataTable
+    ldh a, [hSoundCh3Type]
+    
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+
+    inc hl
+    inc hl
+
+    ldh a, [hSoundCh3Count]
+    
+    sla a
+    sla a
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+
+    ld a, [hl+]
+    ldh [hSoundCh3Duration], a
+
+    ld bc, rNR30
+REPT 5
+    ld a, [hl+]
+    ld [bc], a
+    inc bc
+ENDR
+
+    ld hl,hSoundCh3Count
+    inc [hl]
+    ld hl,hSoundCh3Length
+    dec [hl]
+
+    ; fallthrough
+
+_UpdateCh4:
+    ldh a, [hSoundCh4Duration]
+    or a
+    jr z, .update
+
+    dec a
+    ldh [hSoundCh4Duration], a
+    jr _UpdateDisable
+
+.update:
+    ldh a, [hSoundCh4Length]
+    or a
+    jr z, _UpdateDisable
+
+    ld hl, _SoundDataTable
+    ldh a, [hSoundCh4Type]
+    
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+    ld a, [hl+]
+    ld h, [hl]
+    ld l, a
+
+    inc hl
+    inc hl
+
+    ldh a, [hSoundCh4Count]
+    
+    sla a
+    sla a
+    sla a
+    ld c, a
+    ld b, 0
+    add hl, bc
+
+    ld a, [hl+]
+    ldh [hSoundCh4Duration], a
+
+    ld bc, rNR41
+REPT 4
+    ld a, [hl+]
+    ld [bc], a
+    inc bc
+ENDR
+
+    ld hl,hSoundCh4Count
+    inc [hl]
+    ld hl,hSoundCh4Length
+    dec [hl]
+
+    ; fallthrough
+
+_UpdateDisable:
+    ldh a, [hSoundCh1Length]
+    or a
+    ret nz
+    
+    ldh a, [hSoundCh2Length]
+    or a
+    ret nz
+    
+    ldh a, [hSoundCh3Length]
+    or a
+    ret nz
+    
+    ldh a, [hSoundCh4Length]
+    or a
+    ret nz
+    
+    ldh a, [rIE]
+    and a, (~IEF_TIMER & $FF)
+    ldh [rIE], a
+
+    ldh a, [rIF]
+    and a, (~IEF_TIMER & $FF)
+    ldh [rIF], a
+
+    xor a
+    ldh [rTIMA], a
+
+    ret
+
+
+/*
+Wait until no sounds are playing
+*/
+_WaitSound::
+    ldh a, [hSoundInitialized]
+    or a
+    ret z
+    ; fallthrough
+
+_WaitCh1:
+    ldh a, [hSoundCh1Length]
+    or a
+    jr nz, _WaitCh1
+    ; fallthrough
+
+_WaitCh2:
+    ldh a, [hSoundCh2Length]
+    or a
+    jr nz, _WaitCh2
+    ; fallthrough
+
+_WaitCh3:
+    ldh a, [hSoundCh3Length]
+    or a
+    jr nz, _WaitCh3
+    ; fallthrough
+
+_WaitCh4:
+    ldh a, [hSoundCh4Length]
+    or a
+    jr nz, _WaitCh4
+    ; fallthrough
+
+_WaitReturn:
+    ret
+
+ENDSECTION
+
+
+/*******************************************************************************
 **
 **  VRAM
 **
@@ -2633,33 +3107,104 @@ ENDSECTION
 
 SECTION "GBC-ENGINE-CORE - HRAM", HRAM[_HRAM]
 
-hIsGBMonochromeFlag: DS 1
-hIsGBSuperFlag:      DS 1
-hIsGBColorFlag:      DS 1
-hIsGBAdvanceFlag:    DS 1
+hIsGBMonochromeFlag:
+    DS 1
+hIsGBSuperFlag:
+    DS 1
+hIsGBColorFlag:
+    DS 1
+hIsGBAdvanceFlag:
+    DS 1
 
 hRandomState:
     DS 4
 .end:
 
-hCrashCode::      DS 1
+hCrashCode::
+    DS 1
 
-hIsVBlankFlag:    DS 1
+hIsVBlankFlag:
+    DS 1
 
-hVBLHandler:      DS 2
-hLCDHandler:      DS 2
-hTIMHandler:      DS 2
-hSIOHandler:      DS 2
-hJOYHandler:      DS 2
+hVBLHandler:
+    DS 2
+hLCDHandler:
+    DS 2
+hTIMHandler:
+    DS 2
+hSIOHandler:
+    DS 2
+hJOYHandler:
+    DS 2
 
-hCanResetFlag:    DS 1
+hCanResetFlag:
+    DS 1
 
-hKeysHeld::       DS 1
-hKeysPressed::    DS 1
-hKeysReleased::   DS 1
+hKeysHeld::
+    DS 1
+hKeysPressed::
+    DS 1
+hKeysReleased::
+    DS 1
 
-hCurrentBank:     DS 1
-hFarCallBank:     DS 1
+hCurrentBank:
+    DS 1
+hFarCallBank:
+    DS 1
+
+hSoundInitialized:
+    DS 1
+
+hSoundType:
+    DS 1
+
+hSoundCh1Type:
+    DS 1
+
+hSoundCh1Length:
+    DS 1
+
+hSoundCh1Count:
+    DS 1
+
+hSoundCh1Duration:
+    DS 1
+
+hSoundCh2Type:
+    DS 1
+
+hSoundCh2Length:
+    DS 1
+
+hSoundCh2Count:
+    DS 1
+
+hSoundCh2Duration:
+    DS 1
+
+hSoundCh3Type:
+    DS 1
+
+hSoundCh3Length:
+    DS 1
+
+hSoundCh3Count:
+    DS 1
+
+hSoundCh3Duration:
+    DS 1
+
+hSoundCh4Type:
+    DS 1
+
+hSoundCh4Length:
+    DS 1
+
+hSoundCh4Count:
+    DS 1
+
+hSoundCh4Duration:
+    DS 1
 
 ENDSECTION
 
