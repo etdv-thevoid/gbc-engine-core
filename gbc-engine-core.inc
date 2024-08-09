@@ -2423,8 +2423,6 @@ Input:
 - hl = source address of initial ch3 waveform
 */
 _InitSoundCustomWaveform::
-    di                  ; Disable interrupts
-
     ld a, AUDENA_OFF    ; Turn master audio OFF
     ldh [rNR52], a
 
@@ -2462,7 +2460,7 @@ _InitSoundCustomWaveform::
     ld a, $01           ; Flag sound as initialized
     ldh [hSoundInitialized], a
 
-    reti                ; Enable interrupts
+    ret
 
 _TriangleWaveform:
     DB $01, $23, $45, $67, $89, $AB, $CD, $EF
