@@ -2279,6 +2279,12 @@ _SetDMGPalettes::
     ret
 
 _FadeDMGToBlack::
+    ldh a, [rBGP]
+    cp a, %11111111
+    ret z
+    cp a, %00000000
+    call z, _FadeDMGFromWhite
+
     ld d, e
     call _WaitForVBLInterruptMultiple
     ld a, %11100101
@@ -2295,6 +2301,12 @@ _FadeDMGToBlack::
     jp _WaitForVBLInterruptMultiple
 
 _FadeDMGFromBlack::
+    ldh a, [rBGP]
+    cp a, %00000000
+    jp z, _FadeDMGFromWhite
+    cp a, %11111111
+    ret nz
+    
     ld d, e
     call _WaitForVBLInterruptMultiple
     ld a, %11101010
@@ -2311,6 +2323,12 @@ _FadeDMGFromBlack::
     jp _WaitForVBLInterruptMultiple
 
 _FadeDMGToWhite::
+    ldh a, [rBGP]
+    cp a, %00000000
+    ret z
+    cp a, %11111111
+    call z, _FadeDMGFromBlack
+
     ld d, e
     call _WaitForVBLInterruptMultiple
     ld a, %10100100
@@ -2327,6 +2345,12 @@ _FadeDMGToWhite::
     jp _WaitForVBLInterruptMultiple
 
 _FadeDMGFromWhite::
+    ldh a, [rBGP]
+    cp a, %11111111
+    jp z, _FadeDMGFromBlack
+    cp a, %00000000
+    ret nz
+
     ld d, e
     call _WaitForVBLInterruptMultiple
     ld a, %01010100
