@@ -452,24 +452,6 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Safely turns LCD off by waiting for VBlank
-_ScreenOff::
-    ldh a, [rLCDC]
-    and a, LCDCF_ON
-    ret z                      ; LCD already OFF
-
-    ld b, SCRN_Y
-    ld c, LOW(rLY)
-.wait:
-    ld a, [c]
-    cp a, b
-    jr c, .wait
-
-    xor a, a
-    ldh [rLCDC], a             ; Shutdown LCD
-   
-    ret
-
 /*
 Wait for b >= LY (Scanline)
 
@@ -521,6 +503,29 @@ _WaitForVBLInterrupt::
     ldh a, [hIsVBlankFlag]
     and a
     jr z, .wait
+    ret
+
+/*
+Wait for multiple VBlank Interrupts
+
+Inputs:
+- d = frames to wait
+*/
+_WaitForVBLInterruptMultiple::    
+    inc e
+    dec e
+    ret z
+
+    xor a
+    ldh [hIsVBlankFlag], a
+.wait:
+    halt
+    nop
+    ldh a, [hIsVBlankFlag]
+    and a
+    jr z, .wait
+    dec d
+    jr nz, .wait
     ret
 
 ENDSECTION
@@ -602,30 +607,22 @@ ENDR
     jr z, .noReset          ; else skip
     jp _Reset
 
-; Enables Soft Reset
-_EnableSoftReset::
-    ld a, TRUE
-    ldh [hCanResetFlag], a
-    ret
-
-; Disables Soft Reset
-_DisableSoftReset::
-    ld a, FALSE
-    ldh [hCanResetFlag], a
-    ret
-
 ENDSECTION
 
 
 /*******************************************************************************
 **
-**  PADDING
+**  BUILD DATE
 **
 *******************************************************************************/
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-:  DS $0100 - @, $FF
+_BuildDate:
+    DB __ISO_8601_UTC__
+.end:
+
+DS $0100 - @, $FF
 
 ENDSECTION
 
@@ -664,243 +661,7 @@ _MagicStringVersion:
 
 DS $0150 - @, $00
 
-    DB "BUILD DATE "
-_BuildDate::
-    DB __ISO_8601_UTC__
-.end::
-
-DS $0170 - @, $00
-
 ENDSECTION
-
-
-/*******************************************************************************
-**
-**  STACK CHECK FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-/*
-Verifies that `sp` is within the bounds of the stack and
-causes a crash on detection of overflow.
-
-Trashes:
-- af
-- hl
-*/
-_CheckForStackOverflow::
-    ld hl, sp - STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
-    ld a, h
-    cp a, HIGH(wStackBottom)
-    ld a, CRASH_STACK_OVERFLOW
-    jp c, _CrashHandler
-    ret
-
-/*
-Verifies that `sp` is within the bounds of the stack and
-causes a crash on detection of underflow.
-
-Trashes:
-- af
-- hl
-*/
-_CheckForStackUnderflow::
-IF (STACK_SIZE % $100 == 0)
-    ld hl, sp + STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
-    ld a, h
-    cp a, HIGH(wStackTop) + 1
-    ld a, CRASH_STACK_UNDERFLOW
-    jp nc, _CrashHandler
-ELSE
-    WARN "STACK_SIZE must be a multiple of $100 bytes for effecient stack underflow checking"
-ENDC
-    ret
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
-**  HARDWARE CHECK FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-; Checks if running on MGB hardware
-;
-; Returns:
-; - nz = TRUE
-; - z = FALSE
-_IsGBMonochrome::
-    ldh a, [hIsGBMonochromeFlag]
-    and a
-    ret
-
-; Checks if running on SGB hardware
-;
-; Returns:
-; - nz = TRUE
-; - z = FALSE
-_IsGBSuper::
-    ldh a, [hIsGBSuperFlag]
-    and a
-    ret
-
-; Checks if running on CGB hardware
-;
-; Returns:
-; - nz = TRUE
-; - z = FALSE
-_IsGBColor::
-    ldh a, [hIsGBColorFlag]
-    and a
-    ret
-
-; Checks if running on AGB hardware
-;
-; Returns:
-; - nz = TRUE
-; - z = FALSE
-_IsGBAdvance::
-    ldh a, [hIsGBAdvanceFlag]
-    and a
-    ret
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
-**  CPU SPEED SWITCH FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-; Set GBC/GBA CPU Speed to DoubleSpeed
-_SetCPUFast::
-    ldh a, [hIsGBColorFlag]
-    and a
-    ret z
-    ldh a, [rKEY1]
-    and a, KEY1F_DBLSPEED
-    jr nz, _SwitchCPUSpeed
-    ret
-
-; Set GBA/GBC CPU to SingleSpeed
-_SetCPUSlow::
-    ldh a, [hIsGBColorFlag]
-    and a
-    ret z
-    ldh a, [rKEY1]
-    and a, KEY1F_DBLSPEED
-    jr z, _SwitchCPUSpeed
-    ret
-
-; Switches CPU Speed
-_SwitchCPUSpeed:
-    ldh a, [rIE]
-    ld b, a ; save IE
-    xor a, a
-    ldh [rIE], a
-    ld  a, P1F_GET_NONE
-    ldh [rP1], a
-    ld  a, KEY1F_PREPARE
-    ldh [rKEY1],a
-
-    stop
-
-    ld a, b
-    ldh [rIE], a ; restore IE
-    ret
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
-**  BANK SWITCH & FARCALL FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-; Switches to bank `a`
-_BankSwitchNew::
-    ldh [hFarCallBank], a   ; Save destination bank
-
-    ldh a, [hCurrentBank]   ; Get current bank
-    push af                 ; Push current bank to stack
-
-    ldh a, [hFarCallBank]   ; Set destination bank
-    ldh [hCurrentBank], a
-    ld [rROMB0], a
-    ret
-
-; Returns to previous bank
-_BankSwitchPrevious::
-    pop af                  ; Pop current bank from stack and reset
-    ldh [hCurrentBank], a
-    ld [rROMB0], a
-
-    ret
-
-; Calls function `hl` in bank `a` by switching rom banks
-; - a = bank where function is located
-; - hl = function
-;
-; Arugments can be passed via `bc` and `de`
-; - bc = args
-; - de = args
-_FarCall::
-    ldh [hFarCallBank], a   ; Save destination bank
-
-    ldh a, [hCurrentBank]   ; Get current bank
-    push af                 ; Push current bank to stack
-
-    ldh a, [hFarCallBank]   ; Set destination bank
-    ldh [hCurrentBank], a
-    ld [rROMB0], a
-
-    rst _CallHL             ; Call function at `hl` in destination bank
-
-    pop af                  ; Pop current bank from stack and reset
-    ldh [hCurrentBank], a
-    ld [rROMB0], a
-
-    ret
-
-; Calls function `hl` in bank `a` by switching rom banks.
-; - a = bank where function is located
-; - hl = function
-;
-; Preserves registers `bc` and `de`
-_FarCallPreserve::
-    push de
-    push bc
-    call _FarCall
-    pop bc
-    pop de
-    ret
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
-**  PADDING
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-:  DS $0200 - @, $FF
-
-ENDSECTION
-
 
 /*******************************************************************************
 **
@@ -908,7 +669,7 @@ ENDSECTION
 **
 *******************************************************************************/
 
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0[$0150]
 
 ; Initial boot routine. Determines hardware model from
 ; the initial values of the following registers:
@@ -1210,6 +971,249 @@ _CrashPalette:
     DW (00 << 0) + (00 << 5) + (15 << 10)
     DW (31 << 0) + (31 << 5) + (31 << 10)
 .end:
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  SOFT RESET SWITCH FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Enables Soft Reset
+_EnableSoftReset::
+    ld a, TRUE
+    ldh [hCanResetFlag], a
+    ret
+
+; Disables Soft Reset
+_DisableSoftReset::
+    ld a, FALSE
+    ldh [hCanResetFlag], a
+    ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  STACK CHECK FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+/*
+Verifies that `sp` is within the bounds of the stack and
+causes a crash on detection of overflow.
+
+Trashes:
+- af
+- hl
+*/
+_CheckForStackOverflow::
+    ld hl, sp - STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
+    ld a, h
+    cp a, HIGH(wStackBottom)
+    ld a, CRASH_STACK_OVERFLOW
+    jp c, _CrashHandler
+    ret
+
+/*
+Verifies that `sp` is within the bounds of the stack and
+causes a crash on detection of underflow.
+
+Trashes:
+- af
+- hl
+*/
+_CheckForStackUnderflow::
+IF (STACK_SIZE % $100 == 0)
+    ld hl, sp + STACK_BUFFER  ; account for full push/pops and/or a couple of further calls during
+    ld a, h
+    cp a, HIGH(wStackTop) + 1
+    ld a, CRASH_STACK_UNDERFLOW
+    jp nc, _CrashHandler
+ELSE
+    WARN "STACK_SIZE must be a multiple of $100 bytes for effecient stack underflow checking"
+ENDC
+    ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  HARDWARE CHECK FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Checks if running on MGB hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBMonochrome::
+    ldh a, [hIsGBMonochromeFlag]
+    and a
+    ret
+
+; Checks if running on SGB hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBSuper::
+    ldh a, [hIsGBSuperFlag]
+    and a
+    ret
+
+; Checks if running on CGB hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBColor::
+    ldh a, [hIsGBColorFlag]
+    and a
+    ret
+
+; Checks if running on AGB hardware
+;
+; Returns:
+; - nz = TRUE
+; - z = FALSE
+_IsGBAdvance::
+    ldh a, [hIsGBAdvanceFlag]
+    and a
+    ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  CPU SPEED SWITCH FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Set GBC/GBA CPU Speed to DoubleSpeed
+_SetCPUFast::
+    ldh a, [hIsGBColorFlag]
+    and a
+    ret z
+    ldh a, [rKEY1]
+    and a, KEY1F_DBLSPEED
+    jr nz, _SwitchCPUSpeed
+    ret
+
+; Set GBA/GBC CPU to SingleSpeed
+_SetCPUSlow::
+    ldh a, [hIsGBColorFlag]
+    and a
+    ret z
+    ldh a, [rKEY1]
+    and a, KEY1F_DBLSPEED
+    jr z, _SwitchCPUSpeed
+    ret
+
+; Switches CPU Speed
+_SwitchCPUSpeed:
+    ldh a, [rIE]
+    ld b, a ; save IE
+    xor a, a
+    ldh [rIE], a
+    ld  a, P1F_GET_NONE
+    ldh [rP1], a
+    ld  a, KEY1F_PREPARE
+    ldh [rKEY1],a
+
+    stop
+
+    ld a, b
+    ldh [rIE], a ; restore IE
+    ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  BANK SWITCH & FARCALL FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Switches to bank `a`
+_BankSwitchNew::
+    ldh [hFarCallBank], a   ; Save destination bank
+
+    ldh a, [hCurrentBank]   ; Get current bank
+
+    push af                 ; Push current bank to stack
+    inc sp
+
+    ldh a, [hFarCallBank]   ; Set destination bank
+    ldh [hCurrentBank], a
+    ld [rROMB0], a
+
+    ret
+
+; Returns to previous bank
+_BankSwitchPrevious::
+    dec sp
+    pop af                  ; Pop current bank from stack and reset
+
+    ldh [hCurrentBank], a
+    ld [rROMB0], a
+
+    ret
+
+; Calls function `hl` in bank `a` by switching rom banks
+; - a = bank where function is located
+; - hl = function
+;
+; Arugments can be passed via `bc` and `de`
+; - bc = args
+; - de = args
+_FarCall::
+    ldh [hFarCallBank], a   ; Save destination bank
+
+    ldh a, [hCurrentBank]   ; Get current bank
+    push af                 ; Push current bank to stack
+
+    ldh a, [hFarCallBank]   ; Set destination bank
+    ldh [hCurrentBank], a
+    ld [rROMB0], a
+
+    rst _CallHL             ; Call function at `hl` in destination bank
+
+    pop af                  ; Pop current bank from stack and reset
+    ldh [hCurrentBank], a
+    ld [rROMB0], a
+
+    ret
+
+; Calls function `hl` in bank `a` by switching rom banks.
+; - a = bank where function is located
+; - hl = function
+;
+; Preserves registers `bc` and `de`
+_FarCallPreserve::
+    push de
+    push bc
+    call _FarCall
+    pop bc
+    pop de
+    ret
 
 ENDSECTION
 
@@ -2200,6 +2204,149 @@ ENDSECTION
 
 /*******************************************************************************
 **
+**  SCREEN FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+/*
+Safely turn on screen with optional parameters
+
+Inputs:
+- a = `rLCDC` flags
+*/
+_ScreenOn::
+    or a, LCDCF_ON
+    ldh [rLCDC], a
+    ret
+
+; Safely turns LCD off by waiting for VBlank
+_ScreenOff::
+    ldh a, [rLCDC]
+    and a, LCDCF_ON
+    ret z                      ; LCD already OFF
+
+    ld b, SCRN_Y
+    ld c, LOW(rLY)
+.wait:
+    ld a, [c]
+    cp a, b
+    jr c, .wait
+
+    xor a, a
+    ldh [rLCDC], a             ; Shutdown LCD
+   
+    ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  MONOCHROME PALETTE FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+/*
+Sets all Monochrome DMG Palettes to the default values
+
+Trashes:
+- bc
+*/
+_SetDMGPalettesDefault::
+    ld b, %11100100
+    ld c, %11100100
+    ; fallthrough
+
+/*
+Sets all Monochrome DMG Palettes
+
+Inputs:
+- b = `rBGP` palette
+- c = `rOBP0` palette
+- c ~ `rOBP1` palette
+*/
+_SetDMGPalettes::
+    ld a, b
+    ldh [rBGP], a
+    ld a, c
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+    ret
+
+_FadeDMGToBlack::
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %11100101
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %11101010
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %11111111
+    ldh [rBGP], a
+    ld d, e
+    jp _WaitForVBLInterruptMultiple
+
+_FadeDMGFromBlack::
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %11101010
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %11100101
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %11100100
+    ldh [rBGP], a
+    ld d, e
+    jp _WaitForVBLInterruptMultiple
+
+_FadeDMGToWhite::
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %10100100
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %01010100
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %00000000
+    ldh [rBGP], a
+    ld d, e
+    jp _WaitForVBLInterruptMultiple
+
+_FadeDMGFromWhite::
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %01010100
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %10100100
+    ldh [rBGP], a
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    ld a, %11100100
+    ldh [rBGP], a
+    ld d, e
+    jp _WaitForVBLInterruptMultiple
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
 **  BACKGROUND & WINDOW LAYER FUNCTIONS
 **
 *******************************************************************************/
@@ -2341,45 +2488,6 @@ _SetSpriteParams::
     inc hl
     inc hl
     ld [hl], a
-    ret
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
-**  MONOCHROME PALETTE FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
-
-/*
-Sets all Monochrome DMG Palettes to the default values
-
-Trashes:
-- bc
-*/
-_SetDMGPalettesDefault::
-    ld b, %11100100
-    ld c, %11100100
-    ; fallthrough
-
-/*
-Sets all Monochrome DMG Palettes
-
-Inputs:
-- b = `rBGP` palette
-- c = `rOBP0` palette
-- c ~ `rOBP1` palette
-*/
-_SetDMGPalettes::
-    ld a, b
-    ldh [rBGP], a
-    ld a, c
-    ldh [rOBP0], a
-    cpl
-    ldh [rOBP1], a
     ret
 
 ENDSECTION
