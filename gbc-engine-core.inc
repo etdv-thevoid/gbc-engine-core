@@ -182,6 +182,16 @@ DEF STACK_BUFFER            EQU $10
 DEF HRAM_SIZE               EQU rIE - _HRAM
 DEF hTempStack              EQU rIE - 1
 
+DEF DEFAULT_DMG_PALETTE     EQU %11100100
+DEF DEFAULT_DMG_FADE_1      EQU %11100101
+DEF DEFAULT_DMG_FADE_2      EQU %11101010
+DEF DEFAULT_DMG_FADE_3      EQU %11111111
+
+DEF INVERTED_DMG_PALETTE    EQU (~DEFAULT_DMG_PALETTE)
+DEF INVERTED_DMG_FADE_1     EQU (~DEFAULT_DMG_FADE_1)
+DEF INVERTED_DMG_FADE_2     EQU (~DEFAULT_DMG_FADE_2)
+DEF INVERTED_DMG_FADE_3     EQU (~DEFAULT_DMG_FADE_3)
+
 
 /*******************************************************************************
 **
@@ -2251,118 +2261,231 @@ ENDSECTION
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 /*
-Sets all Monochrome DMG Palettes to the default values
-
-Trashes:
-- bc
+Sets all Monochrome DMG Palettes to the default Black on White values
 */
 _SetDMGPalettesDefault::
-    ld b, %11100100
-    ld c, %11100100
+    ld a, DEFAULT_DMG_PALETTE
+    ld b, DEFAULT_DMG_PALETTE
+    ld c, INVERTED_DMG_PALETTE
+    jr _SetDMGPalettesCustom
+
+/*
+Sets all Monochrome DMG Palettes to inverted White on Black values
+*/
+_SetDMGPalettesInverted::
+    ld a, INVERTED_DMG_PALETTE
+    ld b, INVERTED_DMG_PALETTE
+    ld c, DEFAULT_DMG_PALETTE
     ; fallthrough
 
 /*
 Sets all Monochrome DMG Palettes
 
 Inputs:
-- b = `rBGP` palette
-- c = `rOBP0` palette
-- c ~ `rOBP1` palette
+- a = `rBGP` palette
+- b = `rOBP0` palette
+- c = `rOBP1` palette
 */
-_SetDMGPalettes::
-    ld a, b
+_SetDMGPalettesCustom::
     ldh [rBGP], a
-    ld a, c
+    ld a, b
     ldh [rOBP0], a
-    cpl
+    ld a, c
     ldh [rOBP1], a
     ret
 
-_FadeDMGToBlack::
+/*
+Fades all Monochrome DMG Palettes out, either to all black or all white,
+over a set number of frames.
+
+Determines which direction to fade based on the initial palette.
+
+Requires VBlank interrupts to be enabled.
+
+Inputs:
+- a = number of frames to wait between each transition step.
+
+Trashes:
+- de
+*/
+_FadeDMGPalettesOut::
+    ld e, a
     ldh a, [rBGP]
-    cp a, %11111111
-    ret z
-    cp a, %00000000
-    call z, _FadeDMGFromWhite
+    cp a, DEFAULT_DMG_PALETTE
+    jr z, .fadeOutDefault
+    cp a, INVERTED_DMG_PALETTE
+    jr z, .fadeOutInverted
+    ret
+
+.fadeOutDefault:
+    ld a, DEFAULT_DMG_PALETTE
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
 
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %11100101
-    ldh [rBGP], a
-    ld d, e
-    call _WaitForVBLInterruptMultiple
-    ld a, %11101010
-    ldh [rBGP], a
-    ld d, e
-    call _WaitForVBLInterruptMultiple
-    ld a, %11111111
-    ldh [rBGP], a
-    ld d, e
-    jp _WaitForVBLInterruptMultiple
-
-_FadeDMGFromBlack::
-    ldh a, [rBGP]
-    cp a, %00000000
-    jp z, _FadeDMGFromWhite
-    cp a, %11111111
-    ret nz
     
+    ld a, DEFAULT_DMG_FADE_1
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %11101010
+    
+    ld a, DEFAULT_DMG_FADE_2
     ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %11100101
+    
+    ld a, DEFAULT_DMG_FADE_3
     ldh [rBGP], a
-    ld d, e
-    call _WaitForVBLInterruptMultiple
-    ld a, %11100100
-    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     jp _WaitForVBLInterruptMultiple
 
-_FadeDMGToWhite::
-    ldh a, [rBGP]
-    cp a, %00000000
-    ret z
-    cp a, %11111111
-    call z, _FadeDMGFromBlack
+.fadeOutInverted:
+    ld a, INVERTED_DMG_PALETTE
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
 
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %10100100
+    
+    ld a, INVERTED_DMG_FADE_1
     ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %01010100
+    
+    ld a, INVERTED_DMG_FADE_2
     ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %00000000
+    
+    ld a, INVERTED_DMG_FADE_3
     ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     jp _WaitForVBLInterruptMultiple
 
-_FadeDMGFromWhite::
+
+/*
+Fades all Monochrome DMG Palettes in, either from all black or all white,
+over a set number of frames.
+
+Determines which direction to fade based on the initial palette.
+
+Requires VBlank interrupts to be enabled.
+
+Inputs:
+- a = number of frames to wait between each transition step.
+
+Trashes:
+- de
+*/
+_FadeDMGPalettesIn::
+    ld e, a
     ldh a, [rBGP]
-    cp a, %11111111
-    jp z, _FadeDMGFromBlack
-    cp a, %00000000
-    ret nz
+    cp a, DEFAULT_DMG_FADE_3
+    jr z, .fadeInDefault
+    cp a, INVERTED_DMG_FADE_3
+    jr z, .fadeInInverted
+    ret
+
+.fadeInDefault:
+    ld a, DEFAULT_DMG_FADE_3
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
 
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %01010100
+    
+    ld a, DEFAULT_DMG_FADE_2
     ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %10100100
+    
+    ld a, DEFAULT_DMG_FADE_1
     ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     call _WaitForVBLInterruptMultiple
-    ld a, %11100100
+    
+    ld a, DEFAULT_DMG_PALETTE
     ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
+    ld d, e
+    jp _WaitForVBLInterruptMultiple
+
+.fadeInInverted:
+    ld a, INVERTED_DMG_FADE_3
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    
+    ld a, INVERTED_DMG_FADE_2
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    
+    ld a, INVERTED_DMG_FADE_1
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
+    ld d, e
+    call _WaitForVBLInterruptMultiple
+    
+    ld a, INVERTED_DMG_PALETTE
+    ldh [rBGP], a
+    ldh [rOBP0], a
+    cpl
+    ldh [rOBP1], a
+
     ld d, e
     jp _WaitForVBLInterruptMultiple
 
