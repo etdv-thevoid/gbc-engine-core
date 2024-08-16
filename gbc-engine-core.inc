@@ -1,5 +1,5 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION    EQUS "1.2.0"
+DEF GBC_ENGINE_CORE_VERSION    EQUS "1.2.1"
 
 ; REQUIRED RGBDS VERSION
 DEF REQUIRED_RGBDS_VERSION     EQUS "0.7.0"
@@ -2097,32 +2097,91 @@ _VideoMemCopyFast::
     jr nz, .loop
     ret
 
-; Copies bytes from one area of memory to another while incrementally stepping.
+; Copies bytes from one small area (< 256 bytes) of memory to another.
+;
+; Note:
+; - For copying .1bpp formated graphics data
 ;
 ; Inputs:
 ; - hl = source address
 ; - b = bytes
-; - c = source increment
+; - de = dest address
+_MemCopyFastMonochrome::
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    ld [de], a
+    inc de
+    dec b
+    jr nz, _MemCopyFast
+    ret
+
+; Safely copies bytes from one small area (< 256 bytes) of memory to/from VRAM.
+;
+; Note:
+; - For copying .1bpp formated graphics data
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - b = bytes
+; - de = dest address
+_VideoMemCopyFastMonochrome::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .loop
+    ret
+
+; Copies bytes from one area of memory to another while incrementally stepping.
+;
+; Note:
+; - For copying tilemap data column by column instead of by row
+;
+; Inputs:
+; - hl = source address
+; - b = bytes
+; - c = increment
 ; - de = dest address
 _MemCopyInc::
     ld a, [hl]
     ld [de], a
-    inc de      ; increase dest
-    ld a, b     ; save b
+    
+    xor a
+    ld a, e
+    add a, c
+    ld e, a
+    ld a, d
+    adc a, 0
+    ld d, a     ; increase dest (8 cycles)
+
+    ld a, b
     ld b, $00
-    add hl, bc  ; increase source
-    ld b, a     ; restore b
+    add hl, bc
+    ld b, a     ; increase source (6 cycles)
+
     dec b
     jr nz, _MemCopyInc
     ret
 
 ; Safely copies bytes from one area of memory to/from VRAM while incrementally stepping.
 ;
+; Note:
+; - For copying tilemap data column by column instead of by row
+;
 ; Inputs:
 ; - a = VRAM bank
 ; - hl = source address
 ; - b = bytes
-; - c = source increment
+; - c = increment
 ; - de = dest address
 _VideoMemCopyInc::
     ldh [rVBK], a
@@ -2132,11 +2191,20 @@ _VideoMemCopyInc::
     jr nz, .loop
     ld a, [hl]
     ld [de], a
-    inc de      ; increase dest
-    ld a, b     ; save b
+    
+    xor a
+    ld a, e
+    add a, c
+    ld e, a
+    ld a, d
+    adc a, 0
+    ld d, a     ; increase dest (8 cycles)
+
+    ld a, b
     ld b, $00
-    add hl, bc  ; increase source
-    ld b, a     ; restore b
+    add hl, bc
+    ld b, a     ; increase source (6 cycles)
+
     dec b
     jr nz, .loop
     ret
@@ -3603,7 +3671,9 @@ PURGE REQUIRED_RGBDS_VERSION, REQUIRED_HARDWARE_VERSION, \
       VRAM_SIZE, TILE_BLOCK_SIZE, TILE_SIZE, OFFSET, \
       SRAM_SIZE, SRAM_BUFFER_SIZE, \
       RAM_SIZE, STACK_SIZE, STACK_BUFFER, \
-      HRAM_SIZE, hTempStack
+      HRAM_SIZE, hTempStack, \
+      DEFAULT_DMG_FADE_1, DEFAULT_DMG_FADE_2, DEFAULT_DMG_FADE_3, \
+      INVERTED_DMG_FADE_1, INVERTED_DMG_FADE_2, INVERTED_DMG_FADE_3
 
 
 /*******************************************************************************
