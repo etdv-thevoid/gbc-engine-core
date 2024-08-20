@@ -2233,8 +2233,14 @@ _VideoMemCopyColumnWrap::
 ; - hl = source address
 ; - b = bytes
 ; - de = dest address
+;
+; Trashes:
+; - c
 _VideoMemCopyRowWrap::
     ldh [rVBK], a
+    ld a, e
+    and a, (SCRN_VX_B - 1)
+    ld c, a
 .loop:
     ldh a, [rSTAT]
     bit STATB_BUSY, a
@@ -2242,6 +2248,18 @@ _VideoMemCopyRowWrap::
     ld a, [hl+]
     ld [de], a
     inc de
+    inc c
+    bit 5, c
+    jr z, .skip
+    xor a
+    ld c, a
+    ld a, e
+    sub a, SCRN_VX_B
+    ld e, a
+    ld a, d
+    sbc a, 0
+    ld d, a
+.skip:
     ld a, d
     and a, $9B
     ld d, a
