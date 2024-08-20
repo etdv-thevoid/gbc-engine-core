@@ -837,7 +837,7 @@ ASSERT FATAL, ((_FontTiles.end - _FontTiles) * 2) == (vBLK21.end - vBLK21.32), "
     ld hl, _FontTiles
     ld bc, (_FontTiles.end - _FontTiles)
     ld de, vBLK21.32
-    call _VideoMemCopyMonochrome
+    call _VideoMemCopy1BitPerPixel
 
     xor a
     ld hl, _CrashTextTileMap
@@ -2791,7 +2791,7 @@ REPT 8
     ldh a, [rSTAT]
     bit STATB_BUSY, a
     jr nz, :-
-    
+
     ld a, [hl+]
     ldh [rOCPD], a
 ENDR
