@@ -1163,28 +1163,41 @@ ENDSECTION
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Switches to bank `a`
+;
+; Trashes:
+; - af
+; - hl
 _BankSwitchNew::
-    ldh [hFarCallBank], a   ; Save destination bank
+    ldh [hDestinationBank], a   ; Save destination bank
 
-    ldh a, [hCurrentBank]   ; Get current bank
+    pop hl                      ; Move return address position in stack
+    add sp, -2
+    push hl
+    add sp, +4
 
-    push af                 ; Push current bank to stack
-    inc sp
+    ldh a, [hCurrentBank]       ; Get current bank
+    push af                     ; Push current bank to stack
+    add sp, -2
 
-    ldh a, [hFarCallBank]   ; Set destination bank
+    ldh a, [hDestinationBank]   ; Set current bank
     ldh [hCurrentBank], a
     ld [rROMB0], a
 
     ret
 
 ; Returns to previous bank
+;
+; Trashes:
+; - af
+; - hl
 _BankSwitchPrevious::
-    dec sp
-    pop af                  ; Pop current bank from stack and reset
+    pop hl                      ; Pop return address position in stack
+    pop af                      ; Pop return bank from stack and reset
 
     ldh [hCurrentBank], a
     ld [rROMB0], a
 
+    push hl                     ; Push return address back to stack
     ret
 
 ; Calls function `hl` in bank `a` by switching rom banks
@@ -1195,18 +1208,18 @@ _BankSwitchPrevious::
 ; - bc = args
 ; - de = args
 _FarCall::
-    ldh [hFarCallBank], a   ; Save destination bank
+    ldh [hDestinationBank], a   ; Save destination bank
 
-    ldh a, [hCurrentBank]   ; Get current bank
-    push af                 ; Push current bank to stack
+    ldh a, [hCurrentBank]       ; Get current bank
+    push af                     ; Push current bank to stack
 
-    ldh a, [hFarCallBank]   ; Set destination bank
+    ldh a, [hDestinationBank]   ; Set destination bank
     ldh [hCurrentBank], a
     ld [rROMB0], a
 
-    rst _CallHL             ; Call function at `hl` in destination bank
+    rst _CallHL                 ; Call function at `hl` in destination bank
 
-    pop af                  ; Pop current bank from stack and reset
+    pop af                      ; Pop current bank from stack and reset
     ldh [hCurrentBank], a
     ld [rROMB0], a
 
@@ -1858,7 +1871,7 @@ ENDSECTION
 
 /*******************************************************************************
 **
-**  MEMSET FUNCTIONS
+**  MEMORY FUNCTIONS
 **
 *******************************************************************************/
 
@@ -1879,26 +1892,6 @@ _MemSet::
     jr nz, _MemSet
     ret
 
-; Safely sets an area of VRAM memory to a specified value.
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = start address
-; - bc = byte count
-; - d = value
-_VideoMemSet::
-    ldh [rVBK], a
-.loop:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop
-    ld a, d
-    ld [hl+], a
-    dec bc
-    ld a, b
-    or a, c
-    jr nz, .loop
-    ret
 
 ; Sets a small area (< 256 bytes) of memory to a specified value.
 ;
@@ -1912,24 +1905,6 @@ _MemSetFast::
     jr nz, _MemSetFast
     ret
 
-; Safely sets a small area (< 256 bytes) of VRAM memory to a specified value.
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = start address
-; - b = bytes
-; - d = value
-_VideoMemSetFast::
-    ldh [rVBK], a
-.loop:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop
-    ld a, d
-    ld [hl+], a
-    dec b
-    jr nz, .loop
-    ret
 
 ; Randomizes an area of memory.
 ;
@@ -1945,37 +1920,6 @@ _MemSetRandom::
     jr nz, _MemSetRandom
     ret
 
-; Safely randomizes an area of VRAM memory.
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = start address
-; - bc = byte count
-_VideoMemSetRandom::
-    ldh [rVBK], a
-.loop1:
-    call _GetRandomByte
-.loop2:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop2
-    ld [hl+], a
-    dec bc
-    ld a, b
-    or a, c
-    jr nz, .loop1
-    ret
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
-**  MEMCOPY FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Copies bytes from one area of memory to another.
 ;
@@ -1993,75 +1937,6 @@ _MemCopy::
     jr nz, _MemCopy
     ret
 
-; Safely copies bytes from one area of memory to/from VRAM.
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = source address
-; - bc = byte count
-; - de = dest address
-_VideoMemCopy::
-    ldh [rVBK], a
-.loop:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop
-    ld a, [hl+]
-    ld [de], a
-    inc de
-    dec bc
-    ld a, b
-    or a, c
-    jr nz, .loop
-    ret
-
-; Copies bytes from one area of memory to another.
-;
-; Note:
-; - For copying .1bpp formated graphics data
-;
-; Inputs:
-; - hl = source address
-; - bc = byte count
-; - de = dest address
-_MemCopyMonochrome::
-    ld a, [hl+]
-    ld [de], a
-    inc de
-    ld [de], a
-    inc de
-    dec bc
-    ld a, b
-    or a, c
-    jr nz, _MemCopyMonochrome
-    ret
-
-; Safely copies bytes from one area of memory to/from VRAM.
-;
-; Note:
-; - For copying .1bpp formated graphics data
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = source address
-; - bc = byte count
-; - de = dest address
-_VideoMemCopyMonochrome::
-    ldh [rVBK], a
-.loop:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop
-    ld a, [hl+]
-    ld [de], a
-    inc de
-    ld [de], a
-    inc de
-    dec bc
-    ld a, b
-    or a, c
-    jr nz, .loop
-    ret
 
 ; Copies bytes from one small area (< 256 bytes) of memory to another.
 ;
@@ -2077,148 +1952,6 @@ _MemCopyFast::
     jr nz, _MemCopyFast
     ret
 
-; Safely copies bytes from one small area (< 256 bytes) of memory to/from VRAM.
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = source address
-; - b = bytes
-; - de = dest address
-_VideoMemCopyFast::
-    ldh [rVBK], a
-.loop:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop
-    ld a, [hl+]
-    ld [de], a
-    inc de
-    dec b
-    jr nz, .loop
-    ret
-
-; Copies bytes from one small area (< 256 bytes) of memory to another.
-;
-; Note:
-; - For copying .1bpp formated graphics data
-;
-; Inputs:
-; - hl = source address
-; - b = bytes
-; - de = dest address
-_MemCopyFastMonochrome::
-    ld a, [hl+]
-    ld [de], a
-    inc de
-    ld [de], a
-    inc de
-    dec b
-    jr nz, _MemCopyFast
-    ret
-
-; Safely copies bytes from one small area (< 256 bytes) of memory to/from VRAM.
-;
-; Note:
-; - For copying .1bpp formated graphics data
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = source address
-; - b = bytes
-; - de = dest address
-_VideoMemCopyFastMonochrome::
-    ldh [rVBK], a
-.loop:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop
-    ld a, [hl+]
-    ld [de], a
-    inc de
-    ld [de], a
-    inc de
-    dec b
-    jr nz, .loop
-    ret
-
-; Copies bytes from one area of memory to another while incrementally stepping.
-;
-; Note:
-; - For copying tilemap data column by column instead of by row
-;
-; Inputs:
-; - hl = source address
-; - b = bytes
-; - c = increment
-; - de = dest address
-_MemCopyInc::
-    ld a, [hl]
-    ld [de], a
-    
-    xor a
-    ld a, e
-    add a, c
-    ld e, a
-    ld a, d
-    adc a, 0
-    ld d, a     ; increase dest (8 cycles)
-
-    ld a, b
-    ld b, $00
-    add hl, bc
-    ld b, a     ; increase source (6 cycles)
-
-    dec b
-    jr nz, _MemCopyInc
-    ret
-
-; Safely copies bytes from one area of memory to/from VRAM while incrementally stepping.
-;
-; Note:
-; - For copying tilemap data column by column instead of by row
-;
-; Inputs:
-; - a = VRAM bank
-; - hl = source address
-; - b = bytes
-; - c = increment
-; - de = dest address
-_VideoMemCopyInc::
-    ldh [rVBK], a
-.loop:
-    ldh a, [rSTAT]
-    bit STATB_BUSY, a
-    jr nz, .loop
-    ld a, [hl]
-    ld [de], a
-    
-    xor a
-    ld a, e
-    add a, c
-    ld e, a
-    ld a, d
-    adc a, 0
-    ld d, a     ; increase dest (8 cycles)
-
-    ld a, b
-    ld b, $00
-    add hl, bc
-    ld b, a     ; increase source (6 cycles)
-
-    dec b
-    jr nz, .loop
-    ret
-
-ENDSECTION
-
-
-/*******************************************************************************
-**
-**  MEMCOMPARE FUNCTIONS
-**
-*******************************************************************************/
-
-SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Compares bytes from one area of memory to another.
 ;
@@ -2245,6 +1978,126 @@ _MemCompare::
     ld a, c
     and a, a
     ret
+
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  VIDEO MEMORY FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Safely sets an area of VRAM memory to a specified value.
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = start address
+; - bc = byte count
+; - d = value
+_VideoMemSet::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, d
+    ld [hl+], a
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .loop
+    ret
+
+
+; Safely sets a small area (< 256 bytes) of VRAM memory to a specified value.
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = start address
+; - b = bytes
+; - d = value
+_VideoMemSetFast::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, d
+    ld [hl+], a
+    dec b
+    jr nz, .loop
+    ret
+
+
+; Safely randomizes an area of VRAM memory.
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = start address
+; - bc = byte count
+_VideoMemSetRandom::
+    ldh [rVBK], a
+.loop1:
+    call _GetRandomByte
+.loop2:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop2
+    ld [hl+], a
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .loop1
+    ret
+
+
+; Safely copies bytes from one area of memory to/from VRAM.
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - bc = byte count
+; - de = dest address
+_VideoMemCopy::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .loop
+    ret
+
+
+; Safely copies bytes from one small area (< 256 bytes) of memory to/from VRAM.
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - b = bytes
+; - de = dest address
+_VideoMemCopyFast::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .loop
+    ret
+
 
 ; Safely compares bytes from one area of memory to/from VRAM.
 ;
@@ -2276,6 +2129,126 @@ _VideoMemCompare::
     ld a, c
     and a, a
     ret
+
+
+
+; Safely copies bytes from one area of memory to/from VRAM.
+;
+; Note:
+; - For copying .1bpp formated graphics data
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - bc = byte count
+; - de = dest address
+_VideoMemCopy1BitPerPixel::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    ld [de], a
+    inc de
+    dec bc
+    ld a, b
+    or a, c
+    jr nz, .loop
+    ret
+
+
+; Safely copies bytes from one small area (< 256 bytes) of memory to/from VRAM.
+;
+; Note:
+; - For copying .1bpp formated graphics data
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - b = bytes
+; - de = dest address
+_VideoMemCopyFast1BitPerPixel::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .loop
+    ret
+
+
+; Safely copies bytes from one area of memory to/from VRAM while incrementally stepping.
+;
+; Note:
+; - For copying tilemap data column by column instead of by row
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - b = bytes
+; - c = increment
+; - de = dest address
+_VideoMemCopyColumnWrap::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, [hl]
+    ld [de], a
+    
+    xor a
+    ld a, e
+    add a, SCRN_VX_B
+    ld e, a
+    ld a, d
+    adc a, 0
+    and a, $9B
+    ld d, a     ; increase dest (8 cycles)
+
+
+    ld a, b
+    ld b, $00
+    add hl, bc
+    ld b, a     ; increase source (6 cycles)
+
+    dec b
+    jr nz, .loop
+    ret
+
+
+; Safely copies bytes from one small area (< 256 bytes) of memory to/from VRAM.
+;
+; Inputs:
+; - a = VRAM bank
+; - hl = source address
+; - b = bytes
+; - de = dest address
+_VideoMemCopyRowWrap::
+    ldh [rVBK], a
+.loop:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .loop
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    ld a, d
+    and a, $9B
+    ld d, a
+    dec b
+    jr nz, .loop
+    ret
+
 
 ENDSECTION
 
@@ -2760,6 +2733,11 @@ _SetBackgroundPalette::
     set BCPSB_AUTOINC, a    ; auto increment
     ldh [rBCPS], a
 REPT 8
+:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, :-
+
     ld a, [hl+]
     ldh [rBCPD], a
 ENDR
@@ -2809,6 +2787,11 @@ _SetSpritePalette::
     set OCPSB_AUTOINC, a    ; auto increment
     ldh [rOCPS], a
 REPT 8
+:
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, :-
+    
     ld a, [hl+]
     ldh [rOCPD], a
 ENDR
@@ -3583,7 +3566,7 @@ hKeysReleased::
 
 hCurrentBank:
     DS 1
-hFarCallBank:
+hDestinationBank:
     DS 1
 
 hSoundInitialized:
