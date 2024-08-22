@@ -192,6 +192,8 @@ DEF INVERTED_DMG_FADE_1     EQU (~DEFAULT_DMG_FADE_1)
 DEF INVERTED_DMG_FADE_2     EQU (~DEFAULT_DMG_FADE_2)
 DEF INVERTED_DMG_FADE_3     EQU (~DEFAULT_DMG_FADE_3)
 
+DEF RLE_MAGIC_NUMBER        EQU $30
+
 
 /*******************************************************************************
 **
@@ -1953,6 +1955,90 @@ _MemCopyFast::
     ret
 
 
+; Decompress and copy RLE formatted data from one area of memory to another.
+;
+; Algorithm based on:
+; `RLE coding for Nintendo GBA/DS`
+; `Copyright (C) 2011 CUE`
+;
+; Inputs:
+; - hl = source address
+; - de = dest adress
+;
+; Returns:
+; - bc = byte count of decompressed data
+_MemCopyDecompressRLE::
+    ld a, [hl+]             ; check RLE magic number
+    cp a, RLE_MAGIC_NUMBER
+    ret nz
+
+    ld a, [hl+]             ; check recorded decompressed byte count
+    ld c, a
+    ld a, [hl+]
+    ld b, a
+    ld a, [hl+]             ; limit byte count to 16-bits
+    and a, a
+    ret nz
+
+    push bc                 ; save byte count for later
+
+.loop:                      ; loop through each block of RLE compressed data
+    push bc
+
+    ld a, [hl+]             ; get block header
+    bit 7, a
+    jr nz, .compressedBlock
+
+.uncompressedBlock:         ; uncompressed blocks are N+1 bytes
+    inc a
+    ld c, a                 ; size of block for copy loop byte count
+    ld b, a                 ; size of block for later subtration from total
+
+.copy:
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec c
+    jr nz, .copy
+    
+    jr .continue
+
+.compressedBlock:           ; compressed blocks are N+3 bytes
+    and a, $7F
+    add a, 3
+    ld c, a
+    ld b, a                 ; record size of block for subtration from total
+
+    ld a, [hl+]
+.decompress:
+    ld [de], a
+    inc de
+    dec c
+    jr nz, .decompress
+
+.continue:
+    ld a, b                 ; b holds the size of the last block
+
+    pop bc
+
+    cpl                     ; we need to sub/sbc a from bc without fudging with
+    inc a                   ; hl & de, so we cpl a and use add/adc instead
+    add a, c
+    ld c, a
+
+    ld a, $FF
+    adc a, 0
+    add a, b
+    ld b, a
+
+    or a, c
+    jr nz, .loop
+
+    pop bc                  ; return total byte count of decompressed data
+
+    ret
+
+
 ; Compares bytes from one area of memory to another.
 ;
 ; Inputs:
@@ -3674,7 +3760,8 @@ PURGE REQUIRED_RGBDS_VERSION, REQUIRED_HARDWARE_VERSION, \
       RAM_SIZE, STACK_SIZE, STACK_BUFFER, \
       HRAM_SIZE, hTempStack, \
       DEFAULT_DMG_FADE_1, DEFAULT_DMG_FADE_2, DEFAULT_DMG_FADE_3, \
-      INVERTED_DMG_FADE_1, INVERTED_DMG_FADE_2, INVERTED_DMG_FADE_3
+      INVERTED_DMG_FADE_1, INVERTED_DMG_FADE_2, INVERTED_DMG_FADE_3, \
+      RLE_MAGIC_NUMBER
 
 
 /*******************************************************************************
