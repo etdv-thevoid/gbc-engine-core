@@ -1644,7 +1644,114 @@ ENDSECTION
 
 /*******************************************************************************
 **
-**  MATH FUNCTIONS
+**  12.4 FIXED-POINT MATH FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Adds number `a` to 12.4 fixed-point number at `hl`
+;
+; Inputs:
+; - a = number
+; - hl = low byte address of 12.4 fixed-point number
+;
+; Returns:
+; - hl = low byte address of 12.4 fixed-point number
+_AddToFixedPoint::
+    scf         ; clear carry flag just to be safe
+    ccf 
+
+    add a, [hl]
+    ld [hl+], a
+    ld a, 0
+    adc a, [hl]
+    ld [hl-], a
+
+    ret
+
+
+; Subtracts number `a` from 12.4 fixed-point number at `hl`
+;
+; Inputs:
+; - a = number
+; - hl = low byte address of 12.4 fixed-point number
+;
+; Returns:
+; - hl = low byte address of 12.4 fixed-point number
+_SubtractFromFixedPoint::
+    cpl         ; add using 2's complement
+    inc a
+
+    scf         ; clear carry flag just to be safe
+    ccf 
+
+    add a, [hl]
+    ld [hl], a
+    ret c       ; some shenanigans...
+
+    inc hl
+    scf         ; ...we only want to sbc if carry was 0!
+    ld a, 0
+    sbc a, [hl]
+    ld [hl-], a
+
+    ret
+
+
+; Converts a 12.4 fixed-point number at `hl` to byte `a`
+;
+; Inputs:
+; - hl = low byte address of 12.4 fixed-point number
+;
+; Returns:
+; - a = byte value
+;
+; Trashes:
+; - hl
+_ConvertFixedPointToByte::
+    ld a, [hl+]     ; De-reference hl to high/low of 12.4 fixed-point number
+    ld h, [hl]
+    ld l, a
+REPT 4              ; Divide by 2^4 = 16
+    srl h
+    rr l
+ENDR
+    ld a, l
+    ret
+
+
+; Converts and stores byte number `a` to a 12.4 fixed-point number at `hl`
+;
+; Inputs:
+; - a = number
+; - hl = low byte address of 12.4 fixed-point number
+;
+; Returns:
+; - hl = low byte address of 12.4 fixed-point number
+;
+; Trashes:
+; - a
+_ConvertByteToFixedPoint::
+    swap a              ; swap nibbles
+
+    push af
+    and a, %1111_0000
+    ld [hl+], a         ; put low nibble into upper nibble of low byte
+
+    pop af
+    and a, %0000_1111   ; put low nibble into upper nibble of low byte
+    ld [hl-], a
+
+    ret
+
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  MULTIPLY FUNCTIONS
 **
 *******************************************************************************/
 
@@ -1701,6 +1808,17 @@ _MultiplySigned::
     ld l, a
     inc hl
     ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
+**  DIVIDE FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
 ; Unsigned 8-bit division.
 ;
@@ -2689,7 +2807,7 @@ ENDR
 ; Returns:
 ; - b = y (in pixels)
 ; - c = x (in pixels)
-_ConvertGridPositionToPixelPosition:
+_ConvertGridPositionToPixelPosition::
 REPT 3          ; 2^3 = 8
     sla b       ; y * 8
 ENDR
@@ -2708,7 +2826,7 @@ ENDR
 ; Returns:
 ; - b = y (in tile rows)
 ; - c = x (in tile columns)
-_ConvertPixelPositionToGridPosition:
+_ConvertPixelPositionToGridPosition::
 REPT 3          ; 2^3 = 8
     srl b       ; y / 8
 ENDR
