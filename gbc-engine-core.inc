@@ -2679,12 +2679,97 @@ ENDR
     add hl, de
     ret
 
-; Set `vSCRN0` tile # to `a` at xy `bc`
+
+; Convert grid (row, column) yx position `bc` to pixel coordinates
+;
+; Input:
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+;
+; Returns:
+; - b = y (in pixels)
+; - c = x (in pixels)
+_ConvertGridPositionToPixelPosition:
+REPT 3          ; 2^3 = 8
+    sla b       ; y * 8
+ENDR
+REPT 3          ; 2^3 = 8
+    sla c       ; y * 8
+ENDR
+    ret
+
+
+; Convert pixel yx position `bc` to grid (row, column) coordinates
+;
+; Input:
+; - b = y (in pixels)
+; - c = x (in pixels)
+;
+; Returns:
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+_ConvertPixelPositionToGridPosition:
+REPT 3          ; 2^3 = 8
+    srl b       ; y / 8
+ENDR
+REPT 3          ; 2^3 = 8
+    srl c       ; y / 8
+ENDR
+    ret
+
+
+; Get `vSCRN0` tile # to at yx position `bc`
+;
+; Input:
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+;
+; Returns:
+; - a = Tile #
+; - hl = source address ( `vSCRN0.y#x#` )
+; - de = base address ( `vSCRN0` )
+_GetSCRN0BackgroundTile::
+    ld de, vSCRN0
+    jr _SetBackgroundTile
+
+; Get `vSCRN1` tile # to at yx position `bc`
+;
+; Input:
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+;
+; Returns:
+; - a = Tile #
+; - hl = source address ( `vSCRN1.y#x#` )
+; - de = base address ( `vSCRN1` )
+_GetSCRN1BackgroundTile::
+    ld de, vSCRN1
+    ; fallthrough
+
+_GetBackgroundTile:
+    ld h, $00
+    ld l, b     ; hl = y
+REPT 5          ; 2^5 = 32
+    add hl, hl  ; y * 32
+ENDR
+    ld e, c     ; de = base + x
+    add hl, de  ; hl = (base + x) + (y * 32)
+    
+.wait:          ; wait until VRAM is accessible
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .wait
+
+    ld a, [hl]
+    ret
+
+
+; Set `vSCRN0` tile # to `a` at yx `bc`
 ;
 ; Input:
 ; - a = tile #
-; - b = x
-; - c = y
+; - b = y (in tile rows)
+; - c = x (in tile columns)
 ;
 ; Returns:
 ; - hl = source address ( `vSCRN0.y#x#` )
@@ -2693,12 +2778,12 @@ _SetSCRN0BackgroundTile::
     ld de, vSCRN0
     jr _SetBackgroundTile
 
-; Set `vSCRN1` tile # to `a` at xy `bc`
+; Set `vSCRN1` tile # to `a` at yx `bc`
 ;
 ; Input:
 ; - a = tile #
-; - b = x
-; - c = y
+; - b = y (in tile rows)
+; - c = x (in tile columns)
 ;
 ; Returns:
 ; - hl = source address ( `vSCRN1.y#x#` )
@@ -2715,8 +2800,17 @@ REPT 5          ; 2^5 = 32
     add hl, hl  ; y * 32
 ENDR
     add hl, de  ; hl = (base + x) + (y * 32)
+    push af
+
+.wait:          ; wait until VRAM is accessible
+    ldh a, [rSTAT]
+    bit STATB_BUSY, a
+    jr nz, .wait
+
+    pop af
     ld [hl], a
     ret
+
 
 ENDSECTION
 
