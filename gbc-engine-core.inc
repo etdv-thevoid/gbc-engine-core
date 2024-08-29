@@ -2848,7 +2848,7 @@ ENDR
 ; - de = base address ( `vSCRN0` )
 _GetSCRN0BackgroundTile::
     ld de, vSCRN0
-    jr _SetBackgroundTile
+    jr _GetBackgroundTile
 
 ; Get `vSCRN1` tile # to at yx position `bc`
 ;
