@@ -1650,10 +1650,10 @@ ENDSECTION
 
 SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 
-; Adds number `a` to 12.4 fixed-point number at `hl`
+; Adds byte number `b` to 12.4 fixed-point number at `hl`
 ;
 ; Inputs:
-; - a = number
+; - b = number
 ; - hl = low byte address of 12.4 fixed-point number
 ;
 ; Returns:
@@ -1662,38 +1662,33 @@ _AddToFixedPoint::
     scf         ; clear carry flag just to be safe
     ccf 
 
-    add a, [hl]
+    ld a, [hl]
+    add a, b
     ld [hl+], a
-    ld a, 0
-    adc a, [hl]
+    ld a, [hl]
+    adc a, 0
     ld [hl-], a
 
     ret
 
 
-; Subtracts number `a` from 12.4 fixed-point number at `hl`
+; Subtracts byte number `b` from 12.4 fixed-point number at `hl`
 ;
 ; Inputs:
-; - a = number
+; - b = number
 ; - hl = low byte address of 12.4 fixed-point number
 ;
 ; Returns:
 ; - hl = low byte address of 12.4 fixed-point number
 _SubtractFromFixedPoint::
-    cpl         ; add using 2's complement
-    inc a
-
     scf         ; clear carry flag just to be safe
     ccf 
 
-    add a, [hl]
-    ld [hl], a
-    ret c       ; some shenanigans...
-
-    inc hl
-    scf         ; ...we only want to sbc if carry was 0!
-    ld a, 0
-    sbc a, [hl]
+    ld a, [hl]
+    sub a, b
+    ld [hl+], a
+    ld a, [hl]
+    sbc a, 0
     ld [hl-], a
 
     ret
@@ -1737,10 +1732,10 @@ _ConvertByteToFixedPoint::
 
     push af
     and a, %1111_0000
-    ld [hl+], a         ; put low nibble into upper nibble of low byte
+    ld [hl+], a         ; put low nibble into high nibble of low byte
 
     pop af
-    and a, %0000_1111   ; put low nibble into upper nibble of low byte
+    and a, %0000_1111   ; put high nibble into low nibble of high byte
     ld [hl-], a
 
     ret
