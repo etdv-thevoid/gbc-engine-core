@@ -1746,6 +1746,70 @@ ENDSECTION
 
 /*******************************************************************************
 **
+**  BCD NUMBER MATH FUNCTIONS
+**
+*******************************************************************************/
+
+SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
+
+; Adds byte number `b` to BCD number at `hl` of length `c`
+;
+; Inputs:
+; - b = number
+; - c = BDC number byte length
+; - hl = low byte address of BCD number
+;
+; Returns:
+; - hl = high byte address of BCD number
+_AddToBCDNumber::
+    scf         ; clear carry flag just to be safe
+    ccf 
+
+.loop:
+    ld a, [hl]
+    adc a, b
+    daa
+    ld [hl+], a
+
+    ld b, 0
+    dec c
+    jr nz, .loop
+    
+    dec hl
+    ret
+
+
+; Subtracts byte number `b` from BCD number at `hl` of length `c`
+;
+; Inputs:
+; - b = number
+; - c = BDC number byte length
+; - hl = low byte address of BCD number
+;
+; Returns:
+; - hl = high byte address of BCD number
+_SubtractFromBCDNumber::
+    scf         ; clear carry flag just to be safe
+    ccf 
+
+.loop:
+    ld a, [hl]
+    sbc a, b
+    daa
+    ld [hl+], a
+
+    ld b, 0
+    dec c
+    jr nz, .loop
+
+    dec hl
+    ret
+
+ENDSECTION
+
+
+/*******************************************************************************
+**
 **  MULTIPLY FUNCTIONS
 **
 *******************************************************************************/
