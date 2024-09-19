@@ -1,5 +1,5 @@
 ; UPDATE THIS LINE WHEN CHANGING THE REVISION NUMBER
-DEF GBC_ENGINE_CORE_VERSION    EQUS "1.4.3"
+DEF GBC_ENGINE_CORE_VERSION    EQUS "1.4.4"
 
 ; REQUIRED RGBDS VERSION
 DEF REQUIRED_RGBDS_VERSION     EQUS "0.7.0"
@@ -3352,11 +3352,22 @@ _InitSound::
     and a, (~IEF_TIMER & $FF)
     ldh [rIF], a
 
-    xor a               ; Start Timer with a 64 Hz trigger
+    xor a               ; Setup Timer interrupt
     ldh [rTIMA], a
+    ldh a, [hIsGBColorFlag]
+    and a
+    jr z, .singleSpeed
+    ldh a, [rKEY1]
+    and a, KEY1F_DBLSPEED
+    jr z, .singleSpeed
+.doubleSpeed:           ; Start Timer with a 128 Hz trigger
+    ld a, $80
+    jr .gotSpeed
+.singleSpeed:           ; Start Timer with a 64 Hz trigger
     ld a, $C0
+.gotSpeed:
     ldh [rTMA], a
-    ld a, TACF_START|TACF_4KHZ
+    ld a, TACF_START | TACF_4KHZ
     ldh [rTAC], a
 
     ld a, AUDENA_ON     ; Turn master audio ON
