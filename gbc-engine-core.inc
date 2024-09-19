@@ -2830,7 +2830,7 @@ SECTION FRAGMENT "GBC-ENGINE-CORE", ROM0
 ; Returns:
 ; - hl = source address ( `vBLK01.#` )
 ; - de = base address ( `vBLK01` )
-_GetBLK01TileAddress::
+_GetTileAddressBLK01::
     ld de, vBLK01
     jr _GetTileAddress
 
@@ -2842,7 +2842,7 @@ _GetBLK01TileAddress::
 ; Returns:
 ; - hl = source address ( `vBLK21.#` )
 ; - de = base address ( `vBLK21` )
-_GetBLK21TileAddress::
+_GetTileAddressBLK21::
     add a, OFFSET
     ld de, vBLK21
     ; fallthrough
@@ -2894,8 +2894,39 @@ REPT 3          ; 2^3 = 8
 ENDR
     ret
 
+; Get `vSCRN0` tile attribute at yx position `bc`
+;
+; Input:
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+;
+; Returns:
+; - a = Tile # attribute
+; - hl = source address ( `vSCRN0.y#x#` )
+; - de = base address ( `vSCRN0` )
+_GetBackgroundAttributeSCRN0::
+    ld a, 1
+    ldh [rVBK], a
+    ld de, vSCRN0
+    jr _GetBackgroundTile
 
-; Get `vSCRN0` tile # to at yx position `bc`
+; Get `vSCRN1` tile attribute at yx position `bc`
+;
+; Input:
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+;
+; Returns:
+; - a = Tile # attribute
+; - hl = source address ( `vSCRN1.y#x#` )
+; - de = base address ( `vSCRN1` )
+_GetBackgroundAttributeSCRN1::
+    ld a, 1
+    ldh [rVBK], a
+    ld de, vSCRN1
+    jr _GetBackgroundTile
+
+; Get `vSCRN0` tile # byte at yx position `bc`
 ;
 ; Input:
 ; - b = y (in tile rows)
@@ -2905,11 +2936,13 @@ ENDR
 ; - a = Tile #
 ; - hl = source address ( `vSCRN0.y#x#` )
 ; - de = base address ( `vSCRN0` )
-_GetSCRN0BackgroundTile::
+_GetBackgroundTileSCRN0::
+    xor a
+    ldh [rVBK], a
     ld de, vSCRN0
     jr _GetBackgroundTile
 
-; Get `vSCRN1` tile # to at yx position `bc`
+; Get `vSCRN1` tile # byte at yx position `bc`
 ;
 ; Input:
 ; - b = y (in tile rows)
@@ -2919,7 +2952,9 @@ _GetSCRN0BackgroundTile::
 ; - a = Tile #
 ; - hl = source address ( `vSCRN1.y#x#` )
 ; - de = base address ( `vSCRN1` )
-_GetSCRN1BackgroundTile::
+_GetBackgroundTileSCRN1::
+    xor a
+    ldh [rVBK], a
     ld de, vSCRN1
     ; fallthrough
 
@@ -2941,6 +2976,40 @@ ENDR
     ret
 
 
+; Set `vSCRN0` tile attribute to `a` at yx `bc`
+;
+; Input:
+; - a = tile attribute
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+;
+; Returns:
+; - hl = source address ( `vSCRN0.y#x#` )
+; - de = base address ( `vSCRN0` )
+_SetBackgroundAttributeSCRN0::
+    push af
+    ld a, 1
+    ldh [rVBK], a
+    ld de, vSCRN0
+    jr _SetBackgroundTile
+
+; Set `vSCRN1` tile attribute to `a` at yx `bc`
+;
+; Input:
+; - a = tile attribute
+; - b = y (in tile rows)
+; - c = x (in tile columns)
+;
+; Returns:
+; - hl = source address ( `vSCRN1.y#x#` )
+; - de = base address ( `vSCRN1` )
+_SetBackgroundAttributeSCRN1::
+    push af
+    ld a, 1
+    ldh [rVBK], a
+    ld de, vSCRN1
+    jr _SetBackgroundTile
+
 ; Set `vSCRN0` tile # to `a` at yx `bc`
 ;
 ; Input:
@@ -2951,7 +3020,10 @@ ENDR
 ; Returns:
 ; - hl = source address ( `vSCRN0.y#x#` )
 ; - de = base address ( `vSCRN0` )
-_SetSCRN0BackgroundTile::
+_SetBackgroundTileSCRN0::
+    push af
+    xor a
+    ldh [rVBK], a
     ld de, vSCRN0
     jr _SetBackgroundTile
 
@@ -2965,7 +3037,10 @@ _SetSCRN0BackgroundTile::
 ; Returns:
 ; - hl = source address ( `vSCRN1.y#x#` )
 ; - de = base address ( `vSCRN1` )
-_SetSCRN1BackgroundTile::
+_SetBackgroundTileSCRN1::
+    push af
+    xor a
+    ldh [rVBK], a
     ld de, vSCRN1
     ; fallthrough
 
@@ -2977,7 +3052,6 @@ REPT 5          ; 2^5 = 32
     add hl, hl  ; y * 32
 ENDR
     add hl, de  ; hl = (base + x) + (y * 32)
-    push af
 
 .wait:          ; wait until VRAM is accessible
     ldh a, [rSTAT]
